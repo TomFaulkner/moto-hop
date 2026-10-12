@@ -1,0 +1,22 @@
+Reactorcore Art (RC Art)
+==
+PACK: Motocross Bike
+
+--
+
+Pixel-art sprites pack depicting a modular motocross bike for physics-driven Trials/Elastomania style games. Multiple wheels and connectors to choose from, as well as different color bodies.
+
+--
+
+Drawn with a '32 pixels per meter' scale. Rough estimate, no meticulous accuracy.
+
+--
+
+By default in image import settings, all sprites/textures have been set to 32 pixels per unit and using a point filter so they appear crisp.
+
+--
+
+Contact:
+mailto:reactorcoregames@gmail.com
+
+Enjoy!

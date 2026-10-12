@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.tomfaulkner.moto-hop",
+  "name": "Moto Hop",
+  "version": "0.1.0",
+  "author": "Tom",
+  "license": "MIT",
+  "description": "A side-scrolling motocross overlay game for omarchy-shell (milestone 1: bike render, lanes, wheelie, crash).",
+  "kinds": ["bar-widget", "overlay"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "barWidget": "BarWidget.qml",
+    "overlay": "MotoHop.qml"
+  },
+  "barWidget": {
+    "displayName": "Moto Hop",
+    "description": "Open Moto Hop",
+    "category": "Fun",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
