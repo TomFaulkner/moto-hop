@@ -13,12 +13,19 @@ wheelie / nose-down lean, lane changes, crash tumble.
 **Milestone 2a:** turbo and engine heat. Turbo raises the speed cap and
 fills a TEMP bar; at 100 the bike overheats, coasts to a stop, and cools down.
 
-**Milestone 2b (this):** ramps, cooling arrows, and optional boost strips.
-Ramps are course data (`{type, x, len, lanes, size?}`, looping). Riding up
-pitches the bike with the slope; leaving the lip launches it. Left/right in
-the air set the landing angle (clean, speed penalty, or the existing tumble).
-Cooling arrows zero heat. Boost strips (`ENABLE_BOOST_STRIPS` in `Game.js`)
-give a one-second burst above the cap and add no heat.
+**Milestone 2b:** ramps, cooling arrows, and optional boost strips. Riding a
+slope pitches the bike; leaving a lip launches it. Left/right in the air set
+the landing angle (clean, speed penalty, or the existing tumble). Cooling
+arrows zero heat. Boost strips (`ENABLE_BOOST_STRIPS`) give a one-second burst
+above the cap and add no heat.
+
+**Milestone 2c (this):** track pieces at NES scale. Raised pieces are profile
+segments (up, plateau, down, gap), so a landing on any of those faces works,
+including a down-slope whose pitch matches the bike. Big ramps are two to
+three-and-a-half bike-heights (the sprite is 43px). The camera lifts for tall
+lips. Mud and grass slow the bike. Partial raised pieces draw a side face.
+See `docs/track-pieces.md`. Shapes follow the nesmaps.com Excitebike sheet;
+the pixels are ours.
 
 ## Layout
 

@@ -1,6 +1,11 @@
 // Moto Hop game rules: hand-rolled arcade state, no physics engine.
 // Pure JS (no Qt) so it loads in QML and in node tests.
-// Track features (ramps, cooling arrows, optional boost strips) live in COURSE.
+//
+// Raised pieces are profile segments (up-slope, plateau, down-slope, gap).
+// The rear wheel sticks to whatever segment is under it. A piece that ends
+// in the air is a lip: crossing it launches. Landing compares pitch to the
+// segment you touch, so a down-slope with a matching nose is clean.
+// Heights are in bike-heights of the 43px sprite. See docs/track-pieces.md.
 
 var TITLE = "Moto Hop"
 var VIEW_W = 256
@@ -23,6 +28,8 @@ var SPRITE = {
 }
 // Exhaust point in assembled-sprite pixels, on top of the engine cases.
 var ENGINE = { x: 36, y: 24 }
+// One bike-height. Ramp peaks below are multiples of this.
+var BIKE_H = SPRITE.h
 
 // Tuning. Speeds are px/s on the 256-wide logical view. Heat runs 0..HEAT_MAX.
 // Pitch is degrees, negative = nose up (same sign as a wheelie).
@@ -51,15 +58,20 @@ var LANE_TIME = 0.25
 var CRASH_TIME = 1.5
 
 // Air and ramps. Uphill slopes are negative so they share the wheelie sign.
-var GRAVITY = 320            // px/s^2, pulls jump height back down
+var GRAVITY = 500            // px/s^2. Big lips stay up longer because they start high.
 var AIR_PITCH_RATE = 160     // deg/s while left/right is held in the air
-var PITCH_MIN = -50          // nose-up clamp
-var PITCH_MAX = 46           // nose-down clamp
+var PITCH_MIN = -55          // nose-up clamp (steep lips launch past the old -50)
+var PITCH_MAX = 50           // nose-down clamp (down-slopes land around +35)
 var AIR_COOL_RATE = 8        // heat per second while airborne (slow cool)
 var LAND_CLEAN_TOL = 8       // |pitch - slope| at or under this lands clean
 var LAND_OK_TOL = 16         // within this: survive with a speed penalty
 var LAND_NOSE_CRASH = 12     // nose-down past this (pitch - slope) crashes
 var LAND_SPEED_KEEP = 0.62   // speed kept on an off-angle but survivable landing
+var LAUNCH_H = 4             // leaving a surface taller than this is a lip, not a roll-off
+// vy += kick * speed/MAX_SPEED  +  speed * sin(|slope|) * SLOPE_LAUNCH
+var SLOPE_LAUNCH = 0.65
+// Raised surface this far above the wheels is a wall, not a lane you can merge into.
+var SIDE_HIT = 8
 
 // Optional. When true, "boost" strips give a short burst above the current cap
 // and add no heat. When false, those course entries are ignored and not drawn.
@@ -68,31 +80,155 @@ var BOOST_TIME = 1           // seconds at the raised cap
 var BOOST_SPEED = 250        // above TURBO_SPEED
 var BOOST_ACCEL = 700
 
-// Ramp size picks the lip height and the launch kick. Length lives on each
-// course entry so two ramps of the same size can still differ.
-var RAMP_SPEC = {
-  small:  { height: 10, kick: 60 },
-  medium: { height: 16, kick: 100 },
-  large:  { height: 22, kick: 145 }
+// Mud caps speed hard. Grass is a lighter drag. Both are ground strips.
+var MUD_MAX = 40
+var MUD_DECEL = 520
+var GRASS_MAX = 72
+var GRASS_DECEL = 160
+
+// Camera keeps the bike sprite and the tallest lip already on screen under the HUD.
+var CAM_TOP = 28
+
+function span(len, y0, y1) {
+  var slope = -Math.atan2(y1 - y0, len) * 180 / Math.PI
+  var kind = "flat"
+  if (y1 > y0 + 0.01) kind = "up"
+  else if (y1 < y0 - 0.01) kind = "down"
+  return { len: len, y0: y0, y1: y1, slope: slope, kind: kind, gap: false }
 }
 
-// Looping course. Each entry is {type, x, len, lanes, size?}.
-// x is world px along the track; features repeat every COURSE_LEN.
-// Keep x >= 0 and x + len <= COURSE_LEN so nothing straddles the seam.
-// type "ramp" | "cool" | "boost". Later "mud", "grass", and "finish" can use
-// the same shape. The first feature sits past the distance the turbo/heat
-// tests travel from a standing start.
-var COURSE_LEN = 5200
+function gapSpan(len) {
+  return { len: len, y0: 0, y1: 0, slope: 0, kind: "gap", gap: true }
+}
+
+// kick is the vertical pop (px/s) at MAX_SPEED, before the slope term.
+// Lengths sit on the spans. A span list that ends above the ground is a cliff lip.
+var RAMP_SPEC = {
+  // ~1 bike tall, short up, steep drop. NES hurdle A.
+  small:  { kick: 70, spans: [span(72, 0, 43)] },
+  // ~1.2 bikes, long gentle face so an untouched landing is a penalty not a crash.
+  medium: { kick: 80, spans: [span(200, 0, 50)] },
+  // 2 bikes, long up, short top, cliff. NES hurdle C.
+  large:  { kick: 165, spans: [span(210, 0, 86), span(28, 86, 86)] },
+  // 2 bikes on a short face. NES hurdle E.
+  steep:  { kick: 110, spans: [span(92, 0, 86)] }
+}
+
+var TABLE_SPEC = {
+  // Rideable up, long plateau, rideable down. NES hurdle D, stretched into a table.
+  long: {
+    kick: 70,
+    spans: [span(120, 0, 64), span(260, 64, 64), span(130, 64, 0)]
+  },
+  // ~3.5 bike-heights, long up, long plateau, cliff drop. NES hurdle R.
+  giant: {
+    kick: 80,
+    spans: [span(300, 0, 150), span(380, 150, 150)]
+  }
+}
+
+// Up to a lip, a short gap with two humps under the arc, then a down-slope
+// that the jump meets while it is still high. NES hurdle S.
+var DOUBLE_SPEC = {
+  kick: 100,
+  spans: [
+    span(180, 0, 120),
+    gapSpan(16),
+    span(22, 0, 14),
+    span(22, 14, 0),
+    span(200, 120, 0)
+  ]
+}
+
+// Wide low mound, gentle both ways. The low cousin of hurdle D.
+var HUMP_SPEC = {
+  wide: {
+    kick: 40,
+    spans: [span(150, 0, 36), span(90, 36, 36), span(150, 36, 0)]
+  }
+}
+
+// Partial-lane bumps. Long enough that both wheels can sit on one face.
+// small ≈ hurdle H (about two lanes). tiny ≈ hurdles I and J.
+var BUMP_SPEC = {
+  small: { kick: 24, spans: [span(70, 0, 16), span(70, 16, 0)] },
+  tiny:  { kick: 12, spans: [span(40, 0, 8), span(40, 8, 0)] }
+}
+
+// Looping course. Raised pieces take their length from the profile.
+// Strips are {type, x, len, lanes}. Keep x >= 0 and x + len <= COURSE_LEN.
+// The first feature sits past the distance the turbo/heat tests travel (~620px).
+// Jump lips have a flat run after them so a test launch lands before the next piece.
+var COURSE_LEN = 11400
 var COURSE = [
-  { type: "ramp",  x: 1400, len: 120, lanes: [0, 1, 2, 3], size: "small" },
-  { type: "cool",  x: 1750, len: 120, lanes: [0, 1, 2, 3] },
-  { type: "ramp",  x: 2200, len: 80,  lanes: [1, 2],       size: "medium" },
-  { type: "boost", x: 2800, len: 140, lanes: [0, 1, 2, 3] },
-  { type: "ramp",  x: 3600, len: 72,  lanes: [2, 3],       size: "large" },
-  { type: "cool",  x: 4100, len: 80,  lanes: [0, 1] },
-  { type: "ramp",  x: 4500, len: 80,  lanes: [0],          size: "medium" },
-  { type: "boost", x: 4850, len: 48,  lanes: [3] }
+  { type: "ramp", size: "small", x: 1200, lanes: [0, 1, 2, 3] },
+  { type: "cool", x: 1450, len: 100, lanes: [0, 1] },
+  { type: "ramp", size: "medium", x: 1900, lanes: [0, 1, 2, 3] },
+  { type: "ramp", size: "large", x: 2800, lanes: [1, 2, 3] },
+  { type: "boost", x: 3900, len: 160, lanes: [0, 1, 2, 3] },
+  { type: "mud", x: 4700, len: 240, lanes: [0, 1, 2, 3] },
+  { type: "mud", x: 5100, len: 80, lanes: [2, 3] },
+  { type: "grass", x: 5400, len: 220, lanes: [0, 1, 2, 3] },
+  { type: "grass", x: 5750, len: 90, lanes: [0, 1, 2, 3] },
+  { type: "ramp", size: "steep", x: 6100, lanes: [0, 1] },
+  { type: "bump", size: "small", x: 6600, lanes: [1, 2] },
+  { type: "bump", size: "tiny", x: 6800, lanes: [3] },
+  { type: "hump", size: "wide", x: 7100, lanes: [0, 1, 2, 3] },
+  { type: "table", size: "long", x: 7800, lanes: [0, 1, 2, 3] },
+  { type: "cool", x: 8500, len: 40, lanes: [1] },
+  { type: "double", size: "std", x: 8800, lanes: [0, 1, 2, 3] },
+  { type: "table", size: "giant", x: 9800, lanes: [0, 1, 2, 3] },
+  { type: "boost", x: 10800, len: 48, lanes: [0] }
 ]
+
+function specFor(f) {
+  if (f.type === "ramp") return RAMP_SPEC[f.size] || RAMP_SPEC.small
+  if (f.type === "table") return TABLE_SPEC[f.size] || TABLE_SPEC.long
+  if (f.type === "double") return DOUBLE_SPEC
+  if (f.type === "hump") return HUMP_SPEC[f.size] || HUMP_SPEC.wide
+  if (f.type === "bump") return BUMP_SPEC[f.size] || BUMP_SPEC.small
+  return null
+}
+
+function bakeCourse() {
+  for (var i = 0; i < COURSE.length; i++) {
+    var f = COURSE[i]
+    var spec = specFor(f)
+    if (!spec) {
+      f.spans = []
+      f.peak = 0
+      f.peakAt = 0
+      f.kick = 0
+      continue
+    }
+    var spans = []
+    var x = 0
+    var peak = 0
+    var peakAt = 0
+    for (var j = 0; j < spec.spans.length; j++) {
+      var src = spec.spans[j]
+      var sp = {
+        x0: x, x1: x + src.len, len: src.len,
+        y0: src.y0, y1: src.y1, slope: src.slope,
+        kind: src.kind, gap: src.gap
+      }
+      var top = src.y0 > src.y1 ? src.y0 : src.y1
+      if (top > peak) {
+        peak = top
+        peakAt = src.y1 >= src.y0 ? sp.x1 : sp.x0
+      }
+      spans.push(sp)
+      x += src.len
+    }
+    f.spans = spans
+    f.len = x
+    f.peak = peak
+    f.peakAt = peakAt
+    f.kick = spec.kick || 0
+  }
+}
+
+bakeCourse()
 
 function initialState() {
   return {
@@ -100,8 +236,8 @@ function initialState() {
     speed: 0, scrollX: 0, wheelAngle: 0, tilt: 0,
     heat: 0, overheatT: 0, t: 0,
     smoke: [], smokeT: 0, puffN: 0,
-    crashT: 0, laneFrom: 1, laneTo: 1, laneT: 0,
-    air: false, height: 0, vy: 0, onRamp: null,
+    crashT: 0, crashY: null, laneFrom: 1, laneTo: 1, laneT: 0,
+    air: false, height: 0, vy: 0, onPiece: null,
     boostT: 0, boostHeld: false,
     input: { up: false, down: false, left: false, right: false, throttle: false, turbo: false, crash: false },
     prevInput: { up: false, down: false, crash: false }
@@ -144,16 +280,23 @@ function heatBand(heat) {
 
 function rampHeight(size) {
   var spec = RAMP_SPEC[size] || RAMP_SPEC.small
-  return spec.height
+  var peak = 0
+  for (var i = 0; i < spec.spans.length; i++) {
+    var sp = spec.spans[i]
+    if (sp.y0 > peak) peak = sp.y0
+    if (sp.y1 > peak) peak = sp.y1
+  }
+  return peak
 }
 
-function rampKick(size) {
-  var spec = RAMP_SPEC[size] || RAMP_SPEC.small
-  return spec.kick
-}
-
+// Slope you leave the piece with: the last solid span (the lip, or the run-off).
 function rampSlope(feature) {
-  return -Math.atan(rampHeight(feature.size) / feature.len) * 180 / Math.PI
+  if (!feature || !feature.spans) return 0
+  var last = null
+  for (var i = 0; i < feature.spans.length; i++) {
+    if (!feature.spans[i].gap) last = feature.spans[i]
+  }
+  return last ? last.slope : 0
 }
 
 // First matching feature. Pass a falsy size to ignore size.
@@ -184,44 +327,32 @@ function activeLane(s) {
 }
 
 function hasLane(feature, lane) {
+  if (!feature || !feature.lanes) return false
   for (var i = 0; i < feature.lanes.length; i++) {
     if (feature.lanes[i] === lane) return true
   }
   return false
 }
 
-function rampAt(world, lane) {
+// Raised surface under a point, or null on flat ground, a gap, or the wrong lane.
+function surfaceAt(world, lane) {
   var local = localX(world)
   for (var i = 0; i < COURSE.length; i++) {
     var f = COURSE[i]
-    if (f.type !== "ramp" || !hasLane(f, lane)) continue
+    if (!f.spans || !f.spans.length || !hasLane(f, lane)) continue
     if (local < f.x || local >= f.x + f.len) continue
-    var h = rampHeight(f.size)
-    var t = (local - f.x) / f.len
-    return { index: i, height: h * t, slope: rampSlope(f), feature: f }
+    var rel = local - f.x
+    for (var j = 0; j < f.spans.length; j++) {
+      var sp = f.spans[j]
+      if (rel < sp.x0 || rel >= sp.x1 || sp.gap) continue
+      var t = (rel - sp.x0) / sp.len
+      var h = sp.y0 + (sp.y1 - sp.y0) * t
+      return { index: i, height: h, slope: sp.slope, kind: sp.kind, feature: f, span: sp }
+    }
+    // Inside the piece but on a gap: the ground is not this piece.
+    return null
   }
   return null
-}
-
-function lipCrossed(x0, x1, lane) {
-  if (!(x1 > x0)) return null
-  var best = null
-  var bestLip = -1e9
-  var n0 = Math.floor(x0 / COURSE_LEN) - 1
-  var n1 = Math.floor(x1 / COURSE_LEN) + 1
-  for (var i = 0; i < COURSE.length; i++) {
-    var f = COURSE[i]
-    if (f.type !== "ramp" || !hasLane(f, lane)) continue
-    var lipLocal = f.x + f.len
-    for (var n = n0; n <= n1; n++) {
-      var lip = n * COURSE_LEN + lipLocal
-      if (x0 < lip && x1 >= lip && lip >= bestLip) {
-        bestLip = lip
-        best = f
-      }
-    }
-  }
-  return best
 }
 
 function stripAt(world, lane, type) {
@@ -232,6 +363,44 @@ function stripAt(world, lane, type) {
     if (local >= f.x && local < f.x + f.len) return f
   }
   return null
+}
+
+// How far to push the world down so the bike and the tall lips in view clear the HUD.
+function cameraY(s) {
+  var scroll = s.scrollX || 0
+  var bikeX = s.x || 64
+  var base = (s.laneY == null) ? LANE_Y[1] : s.laneY
+  var lift = s.height || 0
+  if (s.phase === "crash" && s.crashY != null) {
+    var crashed = s.laneY - s.crashY
+    if (crashed > lift) lift = crashed
+  }
+  var highest = base - lift - SPRITE.h
+  var n0 = Math.floor((scroll - 40) / COURSE_LEN)
+  var n1 = Math.floor((scroll + VIEW_W + 40) / COURSE_LEN)
+  for (var n = n0; n <= n1; n++) {
+    var origin = n * COURSE_LEN
+    for (var i = 0; i < COURSE.length; i++) {
+      var f = COURSE[i]
+      if (!f.peak) continue
+      var peakX = origin + f.x + (f.peakAt || 0)
+      var screen = peakX - scroll
+      if (screen < -30 || screen > VIEW_W + 8) continue
+      var spanW = VIEW_W - bikeX
+      if (spanW < 1) spanW = 1
+      var t = (VIEW_W - screen) / spanW
+      if (t < 0) t = 0
+      if (t > 1) t = 1
+      var lane = f.lanes[0]
+      for (var li = 1; li < f.lanes.length; li++) {
+        if (f.lanes[li] < lane) lane = f.lanes[li]
+      }
+      var peakWorld = LANE_Y[lane] - f.peak * t
+      if (peakWorld < highest) highest = peakWorld
+    }
+  }
+  if (highest < CAM_TOP) return Math.round(CAM_TOP - highest)
+  return 0
 }
 
 function advanceLane(s, dt, allowStart, pressedUp, pressedDown) {
@@ -296,7 +465,7 @@ function clearAerial(s) {
   s.air = false
   s.vy = 0
   s.height = 0
-  s.onRamp = null
+  s.onPiece = null
   s.boostT = 0
   s.boostHeld = false
 }
@@ -310,10 +479,13 @@ function recover(s) {
   s.laneT = 0
   s.lane = s.laneTo
   s.laneY = LANE_Y[s.lane]
+  s.crashY = null
   clearAerial(s)
 }
 
 function beginCrash(s) {
+  // Tumble where the bike actually was, not dropped through a tall piece.
+  s.crashY = s.laneY - (s.height || 0)
   s.phase = "crash"
   s.crashT = 0
   s.laneT = 0
@@ -346,14 +518,27 @@ function applyThrottle(s, inp, dt) {
   applyHeat(s, inp, dt)
 }
 
-function launch(s, feature) {
-  var kick = rampKick(feature.size)
+function applyTerrain(s, dt) {
+  var lane = activeLane(s)
+  var wx = s.scrollX + s.x
+  if (stripAt(wx, lane, "mud")) {
+    if (s.speed > MUD_MAX) s.speed = Math.max(MUD_MAX, s.speed - MUD_DECEL * dt)
+  } else if (stripAt(wx, lane, "grass")) {
+    if (s.speed > GRASS_MAX) s.speed = Math.max(GRASS_MAX, s.speed - GRASS_DECEL * dt)
+  }
+}
+
+function launch(s, feature, height, slope) {
   s.air = true
-  s.onRamp = null
-  s.height = rampHeight(feature.size)
-  s.tilt = rampSlope(feature)
-  s.vy = kick * (s.speed / MAX_SPEED)
-  if (s.vy < 0) s.vy = 0
+  s.onPiece = null
+  s.height = height
+  s.tilt = slope
+  var speed = s.speed > 0 ? s.speed : 0
+  var kick = feature && feature.kick ? feature.kick : 0
+  var rad = Math.abs(slope) * Math.PI / 180
+  var vy = kick * (speed / MAX_SPEED) + speed * Math.sin(rad) * SLOPE_LAUNCH
+  if (vy < 0) vy = 0
+  s.vy = vy
 }
 
 function land(s, ground) {
@@ -363,7 +548,7 @@ function land(s, ground) {
   s.vy = 0
   s.air = false
   s.height = ground ? ground.height : 0
-  s.onRamp = ground ? ground.index : null
+  s.onPiece = ground ? ground.index : null
   // Nose-down is stricter than a mirrored wheelie: too steep crashes
   // even when the absolute error is still inside LAND_OK_TOL.
   if (noseDown > LAND_NOSE_CRASH || diff > LAND_OK_TOL) {
@@ -382,36 +567,32 @@ function interactTrack(s, prevScroll, dt) {
   if (s.air) {
     s.vy -= GRAVITY * dt
     s.height += s.vy * dt
-    var under = rampAt(x1, lane)
+    var under = surfaceAt(x1, lane)
     var floorH = under ? under.height : 0
     if (s.vy <= 0 && s.height <= floorH) land(s, under)
     return
   }
 
-  var ground = rampAt(x1, lane)
+  var ground = surfaceAt(x1, lane)
   if (ground) {
-    s.onRamp = ground.index
+    s.onPiece = ground.index
     s.height = ground.height
     s.vy = 0
     s.tilt = ground.slope
     return
   }
 
-  var lip = lipCrossed(x0, x1, lane)
-  if (lip) {
-    launch(s, lip)
+  var prevH = s.height || 0
+  if (s.onPiece != null && prevH > LAUNCH_H) {
+    // Slope of the span we just left, not the 2° the wheelie spring stole this frame.
+    var left = surfaceAt(x0, lane)
+    var slope = left ? left.slope : s.tilt
+    var feature = left ? left.feature : COURSE[s.onPiece]
+    launch(s, feature, prevH, slope)
     return
   }
 
-  // Left the ramp sideways (lane change off a partial ramp) while still raised.
-  if (s.onRamp !== null && s.height > 1) {
-    s.air = true
-    s.vy = 0
-    s.onRamp = null
-    return
-  }
-
-  s.onRamp = null
+  s.onPiece = null
   s.height = 0
   s.vy = 0
 }
@@ -430,7 +611,7 @@ function applyStrips(s) {
 
 function assignPhase(s) {
   if (s.air) s.phase = "air"
-  else if (s.onRamp !== null) s.phase = "ramp"
+  else if (s.onPiece != null && (s.height || 0) > 0.5) s.phase = "ramp"
   else if (s.laneT > 0) s.phase = "lane"
   else if (s.tilt < -5) s.phase = "wheelie"
   else if (s.speed > 0) s.phase = "riding"
@@ -454,6 +635,7 @@ function step(state, dt) {
       s.crashT = 0
       s.tilt = 0
       s.speed = 0
+      s.crashY = null
       clearAerial(s)
     }
   } else if (s.phase === "overheat") {
@@ -497,7 +679,10 @@ function step(state, dt) {
   if (s.phase !== "crash" && s.phase !== "overheat") {
     interactTrack(s, prevScroll, dt)
     if (s.phase !== "crash") {
-      if (!s.air) applyStrips(s)
+      if (!s.air) {
+        applyStrips(s)
+        applyTerrain(s, dt)
+      }
       if (s.heat >= HEAT_MAX) enterOverheat(s)
       else assignPhase(s)
     }
@@ -513,8 +698,9 @@ function pose(s) {
   if (s.phase === "crash") {
     // Tumble about the bike's centre: one and a half flips, landing upside down.
     var t = Math.min(1, s.crashT / (CRASH_TIME * 0.6))
+    var ground = s.crashY == null ? s.laneY : s.crashY
     var cx = s.x - SPRITE.rearHub.x + SPRITE.w / 2 + 24 * t
-    var cy = s.laneY - SPRITE.h / 2 - Math.sin(Math.PI * t) * 30
+    var cy = ground - SPRITE.h / 2 - Math.sin(Math.PI * t) * 30
     return { pivot: "center", x: Math.round(cx), y: Math.round(cy), angleDeg: 540 * t,
              wheelAngle: s.wheelAngle, scrollX: s.scrollX }
   }
@@ -526,15 +712,17 @@ function pose(s) {
 if (typeof module !== "undefined") {
   module.exports = {
     TITLE: TITLE, VIEW_W: VIEW_W, VIEW_H: VIEW_H, LANES: LANES, LANE_Y: LANE_Y,
-    TRACK_TOP: TRACK_TOP, LANE_H: LANE_H, SPRITE: SPRITE, CRASH_TIME: CRASH_TIME,
+    TRACK_TOP: TRACK_TOP, LANE_H: LANE_H, SPRITE: SPRITE, BIKE_H: BIKE_H, CRASH_TIME: CRASH_TIME,
     HEAT_MAX: HEAT_MAX, HEAT_YELLOW: HEAT_YELLOW, HEAT_RED: HEAT_RED, HEAT_FLASH: HEAT_FLASH,
     OVERHEAT_TIME: OVERHEAT_TIME, MAX_SPEED: MAX_SPEED, TURBO_SPEED: TURBO_SPEED,
     AIR_COOL_RATE: AIR_COOL_RATE, GRAVITY: GRAVITY,
     LAND_CLEAN_TOL: LAND_CLEAN_TOL, LAND_OK_TOL: LAND_OK_TOL,
     LAND_NOSE_CRASH: LAND_NOSE_CRASH, LAND_SPEED_KEEP: LAND_SPEED_KEEP,
     ENABLE_BOOST_STRIPS: ENABLE_BOOST_STRIPS, BOOST_TIME: BOOST_TIME, BOOST_SPEED: BOOST_SPEED,
+    MUD_MAX: MUD_MAX, GRASS_MAX: GRASS_MAX, SIDE_HIT: SIDE_HIT,
     COURSE: COURSE, COURSE_LEN: COURSE_LEN, RAMP_SPEC: RAMP_SPEC,
     initialState: initialState, setInput: setInput, step: step, pose: pose, heatBand: heatBand,
-    courseFeature: courseFeature, rampHeight: rampHeight, rampSlope: rampSlope
+    courseFeature: courseFeature, rampHeight: rampHeight, rampSlope: rampSlope,
+    surfaceAt: surfaceAt, cameraY: cameraY
   }
 }

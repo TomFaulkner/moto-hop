@@ -60,6 +60,42 @@ Window {
       var strip = course("boost")
       s = place(s, 1, strip.x + 18, Game.MAX_SPEED)
       s = play(s, 14, { throttle: true })
+    } else if (name === "big-ramp") {
+      var big = course("ramp", "large")
+      s = place(s, big.lanes[0], big.x + big.len * 0.55, 90)
+      s = play(s, 1, { throttle: true })
+    } else if (name === "airborne-big") {
+      var lip = course("ramp", "large")
+      s = place(s, lip.lanes[0], lip.x + lip.len - 2, 150)
+      guard = 0
+      while (!s.air && guard < 30) { s = play(s, 1, {}); guard++ }
+      s = play(s, 10, { left: true })
+    } else if (name === "side-crash") {
+      var wall = course("ramp", "large")
+      var off = 0
+      while (wall.lanes.indexOf(off) >= 0) off++
+      var onLane = wall.lanes[0]
+      var mid = wall.spans[0].x1 * 0.55
+      s = place(s, off, wall.x + mid, 70)
+      var toward = onLane > off ? { down: true } : { up: true }
+      s = play(s, 1, toward)
+      s = play(s, 20, {})
+    } else if (name === "pieces-overview") {
+      var table = course("table", "long")
+      s = place(s, 1, table.x + 150, 70)
+      s = play(s, 1, { throttle: true })
+    } else if (name === "mud") {
+      var mud = course("mud")
+      s = place(s, 1, mud.x + 30, 110)
+      s = play(s, 8, { throttle: true })
+    } else if (name === "giant") {
+      var giant = course("table", "giant")
+      s = place(s, 1, giant.x + giant.peakAt - 20, 70)
+      s = play(s, 1, { throttle: true })
+    } else if (name === "bump") {
+      var bump = course("bump", "small")
+      s = place(s, bump.lanes[0], bump.x + 36, 40)
+      s = play(s, 1, {})
     } else if (name === "land-crash") {
       // Nose-down into the gentle ramp's flat and tumble while the wedge is still visible.
       var lip = course("ramp", "large")
