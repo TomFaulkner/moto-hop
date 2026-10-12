@@ -28,6 +28,32 @@ Item {
 
     function img(name) { return scene.assetDir + name }
 
+    // Pixel-art swingarm + shock in bike-local sprite space (fork greys, integer rects).
+    function drawRearSuspension(ctx) {
+      var blk = "#1a191b", dk = "#302f31", mid = "#4b4a4c", lit = "#656466"
+      function r(c, x, y, w, h) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h) }
+      // Rear axle (11.5, 31.5) → pivot just behind/below the engine (28, 28)
+      var arm = [[11, 30, 6], [16, 29, 7], [22, 28, 7]]
+      for (var i = 0; i < arm.length; i++) {
+        var a = arm[i]
+        r(blk, a[0], a[1], a[2], 3)
+        r(lit, a[0], a[1], a[2], 1)
+        r(mid, a[0], a[1] + 1, a[2], 1)
+        r(dk,  a[0], a[1] + 2, a[2], 1)
+      }
+      r(blk, 10, 30, 3, 4); r(lit, 11, 31, 1, 2)
+      r(blk, 27, 27, 4, 5); r(mid, 28, 28, 2, 3); r(lit, 29, 29, 1, 1)
+      // Shock from swingarm midpoint up to the frame under the seat
+      var sh = [[22, 26, 3, 4], [20, 22, 3, 5], [18, 18, 3, 5], [16, 15, 3, 4]]
+      for (var j = 0; j < sh.length; j++) {
+        var t = sh[j]
+        r(blk, t[0], t[1], t[2], t[3])
+        r(mid, t[0] + 1, t[1], 1, t[3])
+      }
+      r(lit, 17, 17, 5, 1); r(lit, 17, 19, 5, 1); r(lit, 18, 21, 5, 1)
+      r(dk, 15, 14, 5, 2); r(lit, 16, 14, 3, 1)
+    }
+
     onPaint: {
       var ctx = getContext("2d")
       var g = scene.game
@@ -78,6 +104,7 @@ Item {
       ctx.rotate(p.angleDeg * Math.PI / 180)
       if (p.pivot === "center") ctx.translate(-Math.round(S.w / 2), -Math.round(S.h / 2))
       else ctx.translate(-Math.round(S.rearHub.x), -S.h)
+      drawRearSuspension(ctx)
       var hubs = [S.rearHub, S.frontHub]
       for (var w = 0; w < 2; w++) {
         ctx.save()
