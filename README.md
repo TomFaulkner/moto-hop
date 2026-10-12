@@ -10,8 +10,15 @@ No physics engine: hand-rolled arcade rules and state in `Game.js`.
 **Milestone 1:** bike render. Flat scrolling track, 4 lanes, spinning wheels,
 wheelie / nose-down lean, lane changes, crash tumble.
 
-**Milestone 2a (this):** turbo and engine heat. Turbo raises the speed cap and
+**Milestone 2a:** turbo and engine heat. Turbo raises the speed cap and
 fills a TEMP bar; at 100 the bike overheats, coasts to a stop, and cools down.
+
+**Milestone 2b (this):** ramps, cooling arrows, and optional boost strips.
+Ramps are course data (`{type, x, len, lanes, size?}`, looping). Riding up
+pitches the bike with the slope; leaving the lip launches it. Left/right in
+the air set the landing angle (clean, speed penalty, or the existing tumble).
+Cooling arrows zero heat. Boost strips (`ENABLE_BOOST_STRIPS` in `Game.js`)
+give a one-second burst above the cap and add no heat.
 
 ## Layout
 
@@ -25,7 +32,8 @@ fills a TEMP bar; at 100 the bike overheats, coasts to a stop, and cools down.
 
 - `Space` / `Z` / `J`: throttle (hold). Top speed as tuned; heat slowly cools.
 - `Shift` / `K`: turbo (hold). Higher top speed, faster acceleration, heat rises.
-- `←` / `A`: lean back (wheelie, at speed)  ·  `→` / `D`: lean forward
+- `←` / `A`: lean back (wheelie, at speed); in the air, nose up
+- `→` / `D`: lean forward; in the air, nose down
 - `↑` `↓` / `W` `S`: change lane
 - `X` / `C`: crash (debug pose)
 - `Esc` or click outside: close
@@ -47,6 +55,7 @@ QT_QPA_PLATFORM=offscreen python tools/shoot.py screens   # needs PySide6 6.x
 ```
 
 `shoot.py` renders `Scene.qml` (the same file the plugin uses) offscreen and
-writes `idle`, `riding`, `wheelie`, `lane`, `crash`, `crashed`, `turbo`, `overheat` PNGs.
+writes `idle`, `riding`, `wheelie`, `lane`, `crash`, `crashed`, `turbo`, `overheat`,
+`ramp-up`, `airborne`, `cool-arrow`, `boost`, `land-crash` PNGs.
 
 See `CREDITS.md` for asset sources and licenses.

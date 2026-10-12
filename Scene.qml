@@ -71,6 +71,104 @@ Item {
       r(dk, 15, 14, 5, 2); r(lit, 16, 14, 3, 1)
     }
 
+    // Dirt wedge on one lane. base is the wheel-contact y; the lip rises by `height`.
+    function drawRamp(ctx, sx, len, base, height) {
+      var x0 = Math.floor(sx)
+      var span = Math.max(2, Math.round(len))
+      var hMax = Math.max(1, Math.round(height))
+      var step = 2
+      for (var i = 0; i < span; i += step) {
+        var colH = Math.round(hMax * (i + step) / span)
+        if (colH < 1) colH = 1
+        var x = x0 + i
+        if (x >= Game.VIEW_W || x + step <= 0) continue
+        ctx.fillStyle = "#7a3e18"
+        ctx.fillRect(x, base - colH, step, colH + 3)
+        ctx.fillStyle = "#c47a38"
+        ctx.fillRect(x, base - colH + 2, step, Math.max(0, colH - 2))
+        ctx.fillStyle = "#f0c080"
+        ctx.fillRect(x, base - colH, step, 2)
+        if ((i / step) % 3 === 0) {
+          ctx.fillStyle = "#a06028"
+          ctx.fillRect(x, base - Math.max(2, Math.round(colH * 0.45)), step, 2)
+        }
+      }
+      var lip = x0 + span
+      if (lip < Game.VIEW_W + 4 && lip + 4 > 0) {
+        ctx.fillStyle = "#3c1c0c"
+        ctx.fillRect(lip, base - hMax, 3, hMax + 3)
+        ctx.fillStyle = "#241006"
+        ctx.fillRect(lip + 3, base - hMax + 2, 1, Math.max(1, hMax - 1))
+      }
+    }
+
+    function drawChevron(ctx, x, y) {
+      ctx.fillStyle = "#ffffff"
+      ctx.fillRect(x,     y,     2, 2)
+      ctx.fillRect(x + 2, y + 2, 2, 2)
+      ctx.fillRect(x + 4, y + 4, 2, 2)
+      ctx.fillRect(x + 2, y + 6, 2, 2)
+      ctx.fillRect(x,     y + 8, 2, 2)
+    }
+
+    // Cooling strip: blue pad and white chevrons on the dirt.
+    function drawCool(ctx, sx, len, base) {
+      var x0 = Math.floor(sx)
+      var span = Math.max(1, Math.round(len))
+      var top = base - 16
+      ctx.fillStyle = "#104878"
+      ctx.fillRect(x0, top, span, 14)
+      ctx.fillStyle = "#48c0fc"
+      ctx.fillRect(x0 + 1, top + 1, Math.max(0, span - 2), 12)
+      for (var ax = 4; ax < span - 8; ax += 12) drawChevron(ctx, x0 + ax, top + 2)
+    }
+
+    // Optional boost strip. Hazard stripes plus a bolt, not the cool chevron.
+    function drawBoost(ctx, sx, len, base) {
+      if (!Game.ENABLE_BOOST_STRIPS) return
+      var x0 = Math.floor(sx)
+      var span = Math.max(1, Math.round(len))
+      var top = base - 16
+      var h = 14
+      for (var i = 0; i < span; i += 4) {
+        ctx.fillStyle = ((i / 4) % 2 === 0) ? "#ffe040" : "#f83800"
+        ctx.fillRect(x0 + i, top, Math.min(4, span - i), h)
+      }
+      ctx.fillStyle = "#1a1004"
+      ctx.fillRect(x0, top, span, 1)
+      ctx.fillRect(x0, top + h - 1, span, 1)
+      ctx.fillStyle = "#141414"
+      for (var bx = 8; bx < span - 8; bx += 18) {
+        var x = x0 + bx
+        ctx.fillRect(x + 4, top + 1, 2, 4)
+        ctx.fillRect(x + 1, top + 5, 5, 2)
+        ctx.fillRect(x + 2, top + 7, 2, 5)
+      }
+    }
+
+    function drawCourse(ctx, scroll) {
+      var course = Game.COURSE
+      var cycle = Game.COURSE_LEN
+      var n0 = Math.floor((scroll - 200) / cycle) - 1
+      var n1 = Math.floor((scroll + Game.VIEW_W + 200) / cycle) + 1
+      for (var n = n0; n <= n1; n++) {
+        var origin = n * cycle
+        for (var i = 0; i < course.length; i++) {
+          var f = course[i]
+          var sx0 = origin + f.x - scroll
+          if (sx0 > Game.VIEW_W || sx0 + f.len < 0) continue
+          for (var li = 0; li < f.lanes.length; li++) {
+            var lane = f.lanes[li]
+            if (lane < 0 || lane >= Game.LANES) continue
+            var base = Game.LANE_Y[lane]
+            if (f.type === "ramp") drawRamp(ctx, sx0, f.len, base, Game.rampHeight(f.size))
+            else if (f.type === "cool") drawCool(ctx, sx0, f.len, base)
+            else if (f.type === "boost") drawBoost(ctx, sx0, f.len, base)
+          }
+        }
+      }
+    }
+
     onPaint: {
       var ctx = getContext("2d")
       var g = scene.game
@@ -110,9 +208,20 @@ Item {
       ctx.fillStyle = "#f8f800"
       for (var mx = -(sx % 128) + 100; mx < W; mx += 128) ctx.fillRect(mx, Game.TRACK_TOP - 4, 3, 8)
 
-      // Shadow (stays on the lane even while tumbling)
+      drawCourse(ctx, sx)
+
+      // Shadow stays on the flat lane in the air and while tumbling.
+      // On a ramp it sits under the raised contact point.
+      var shadowY = g.laneY
+      var shadowW = 66
+      if (g.air) {
+        var lift = g.height || 0
+        shadowW = Math.max(18, Math.round(66 - lift * 0.4))
+      } else if (g.phase !== "crash" && (g.height || 0) > 0.5) {
+        shadowY = p.y
+      }
       ctx.fillStyle = "rgba(0,0,0,0.3)"
-      ctx.fillRect(Math.round(g.x - 4), Math.round(g.laneY - 2), 66, 3)
+      ctx.fillRect(Math.round(g.x - 4 + (66 - shadowW) / 2), Math.round(shadowY - 2), shadowW, 3)
 
       // Bike, rotated about the rear-wheel contact point
       var S = Game.SPRITE
