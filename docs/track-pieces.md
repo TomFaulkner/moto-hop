@@ -28,10 +28,14 @@ ground is a cliff lip; crossing it launches. Vertical speed is the piece's
 kick scaled by `speed / MAX_SPEED`, plus a term from the lip angle, so a taller
 lip and a faster run both stay up longer.
 
-A piece only fills the lanes in its `lanes` array. On the near edge, where the
-next lane does not have the piece, `Scene.qml` draws a dark side face under
-the riding surface. The drawn crust is one pixel into the tire so the wheel
-meets the dirt.
+A piece only fills the lanes in its `lanes` array. Changing lanes into a lane
+whose surface at the bike's x is more than a few pixels above the wheels, or
+off the side of a raised piece into a lane that does not have it, uses the
+same tumble as a bad landing. A lane change that finishes before the piece is
+clear, and a change along a piece that fills both lanes stays on the face.
+On the near edge, where the next lane does not have the piece, `Scene.qml`
+draws a dark side face under the riding surface. The drawn crust is one pixel
+into the tire so the wheel meets the dirt.
 
 `cameraY` drops the horizon when the bike or a lip already on screen would
 pass under the HUD, so a 3.5-bike table and the air above it stay in the

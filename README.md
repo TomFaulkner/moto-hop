@@ -23,9 +23,10 @@ above the cap and add no heat.
 segments (up, plateau, down, gap), so a landing on any of those faces works,
 including a down-slope whose pitch matches the bike. Big ramps are two to
 three-and-a-half bike-heights (the sprite is 43px). The camera lifts for tall
-lips. Mud and grass slow the bike. Partial raised pieces draw a side face.
-See `docs/track-pieces.md`. Shapes follow the nesmaps.com Excitebike sheet;
-the pixels are ours.
+lips. Mud and grass slow the bike. Changing lanes into a raised piece from
+the side, or off the side of one, tumbles. Partial raised pieces draw a side
+face. The course is a loop of these pieces. See `docs/track-pieces.md`.
+Shapes follow the nesmaps.com Excitebike sheet; the pixels are ours.
 
 ## Layout
 

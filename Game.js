@@ -5,7 +5,9 @@
 // The rear wheel sticks to whatever segment is under it. A piece that ends
 // in the air is a lip: crossing it launches. Landing compares pitch to the
 // segment you touch, so a down-slope with a matching nose is clean.
-// Heights are in bike-heights of the 43px sprite. See docs/track-pieces.md.
+// Changing lanes into a face that is above the wheels, or off the side of
+// one, tumbles. Heights are in bike-heights of the 43px sprite.
+// See docs/track-pieces.md.
 
 var TITLE = "Moto Hop"
 var VIEW_W = 256
@@ -155,30 +157,36 @@ var BUMP_SPEC = {
   tiny:  { kick: 12, spans: [span(40, 0, 8), span(40, 8, 0)] }
 }
 
-// Looping course. Raised pieces take their length from the profile.
+// Looping test track. Raised pieces take their length from the profile.
 // Strips are {type, x, len, lanes}. Keep x >= 0 and x + len <= COURSE_LEN.
-// The first feature sits past the distance the turbo/heat tests travel (~620px).
-// Jump lips have a flat run after them so a test launch lands before the next piece.
-var COURSE_LEN = 11400
+// The first feature sits past the turbo/heat standing run (~620px).
+// Lips have flat after them so a test launch lands before the next piece
+// (a large ramp at speed 160 flies about 180px past the lip). The full-width
+// boost has a long flat after it: that test rolls about 520px from the strip.
+var COURSE_LEN = 10400
 var COURSE = [
+  // Short hop, cool the top lanes, gentle ramp, then grass.
   { type: "ramp", size: "small", x: 1200, lanes: [0, 1, 2, 3] },
-  { type: "cool", x: 1450, len: 100, lanes: [0, 1] },
-  { type: "ramp", size: "medium", x: 1900, lanes: [0, 1, 2, 3] },
-  { type: "ramp", size: "large", x: 2800, lanes: [1, 2, 3] },
-  { type: "boost", x: 3900, len: 160, lanes: [0, 1, 2, 3] },
-  { type: "mud", x: 4700, len: 240, lanes: [0, 1, 2, 3] },
-  { type: "mud", x: 5100, len: 80, lanes: [2, 3] },
-  { type: "grass", x: 5400, len: 220, lanes: [0, 1, 2, 3] },
-  { type: "grass", x: 5750, len: 90, lanes: [0, 1, 2, 3] },
-  { type: "ramp", size: "steep", x: 6100, lanes: [0, 1] },
-  { type: "bump", size: "small", x: 6600, lanes: [1, 2] },
-  { type: "bump", size: "tiny", x: 6800, lanes: [3] },
-  { type: "hump", size: "wide", x: 7100, lanes: [0, 1, 2, 3] },
-  { type: "table", size: "long", x: 7800, lanes: [0, 1, 2, 3] },
-  { type: "cool", x: 8500, len: 40, lanes: [1] },
-  { type: "double", size: "std", x: 8800, lanes: [0, 1, 2, 3] },
-  { type: "table", size: "giant", x: 9800, lanes: [0, 1, 2, 3] },
-  { type: "boost", x: 10800, len: 48, lanes: [0] }
+  { type: "cool", x: 1500, len: 110, lanes: [0, 1] },
+  { type: "ramp", size: "medium", x: 1850, lanes: [0, 1, 2, 3] },
+  { type: "grass", x: 2250, len: 200, lanes: [0, 1, 2, 3] },
+  // Lane 0 stays down; the other three take the big ramp, then a boost straight.
+  { type: "ramp", size: "large", x: 2700, lanes: [1, 2, 3] },
+  { type: "boost", x: 3400, len: 180, lanes: [0, 1, 2, 3] },
+  // Full mud, then a split: grass on the top lanes, mud on the bottom.
+  { type: "mud", x: 4200, len: 260, lanes: [0, 1, 2, 3] },
+  { type: "grass", x: 4550, len: 110, lanes: [0, 1] },
+  { type: "mud", x: 4550, len: 110, lanes: [2, 3] },
+  // Steep face on the top, bumps to thread, a mound, the long table.
+  { type: "ramp", size: "steep", x: 4900, lanes: [0, 1] },
+  { type: "bump", size: "small", x: 5200, lanes: [1, 2] },
+  { type: "bump", size: "tiny", x: 5480, lanes: [3] },
+  { type: "hump", size: "wide", x: 5750, lanes: [0, 1, 2, 3] },
+  { type: "table", size: "long", x: 6350, lanes: [0, 1, 2, 3] },
+  { type: "cool", x: 7050, len: 48, lanes: [1] },
+  { type: "double", size: "std", x: 7300, lanes: [0, 1, 2, 3] },
+  { type: "table", size: "giant", x: 8000, lanes: [0, 1, 2, 3] },
+  { type: "boost", x: 9300, len: 64, lanes: [0] }
 ]
 
 function specFor(f) {
@@ -236,7 +244,7 @@ function initialState() {
     speed: 0, scrollX: 0, wheelAngle: 0, tilt: 0,
     heat: 0, overheatT: 0, t: 0,
     smoke: [], smokeT: 0, puffN: 0,
-    crashT: 0, crashY: null, laneFrom: 1, laneTo: 1, laneT: 0,
+    crashT: 0, crashY: null, laneFrom: 1, laneTo: 1, laneT: 0, changing: false,
     air: false, height: 0, vy: 0, onPiece: null,
     boostT: 0, boostHeld: false,
     input: { up: false, down: false, left: false, right: false, throttle: false, turbo: false, crash: false },
@@ -405,13 +413,21 @@ function cameraY(s) {
 
 function advanceLane(s, dt, allowStart, pressedUp, pressedDown) {
   if (s.laneT > 0) {
+    // Includes the frame the move finishes. laneFrom stays put after that,
+    // so callers must only treat this flag, not a stale laneFrom.
+    s.changing = true
     s.laneT = Math.max(0, s.laneT - dt)
     var f = 1 - s.laneT / LANE_TIME
     s.laneY = LANE_Y[s.laneFrom] + (LANE_Y[s.laneTo] - LANE_Y[s.laneFrom]) * f
     if (s.laneT === 0) { s.lane = s.laneTo; s.laneY = LANE_Y[s.lane] }
   } else if (allowStart && (pressedUp || pressedDown)) {
     var to = Math.max(0, Math.min(LANES - 1, s.lane + (pressedUp ? -1 : 1)))
-    if (to !== s.lane) { s.laneFrom = s.lane; s.laneTo = to; s.laneT = LANE_TIME }
+    if (to !== s.lane) {
+      s.laneFrom = s.lane
+      s.laneTo = to
+      s.laneT = LANE_TIME
+      s.changing = true
+    }
   }
 }
 
@@ -489,9 +505,26 @@ function beginCrash(s) {
   s.phase = "crash"
   s.crashT = 0
   s.laneT = 0
+  s.changing = false
   s.lane = s.laneTo
   s.laneY = LANE_Y[s.lane]
   clearAerial(s)
+}
+
+// While a lane change is in progress, the two lanes have to offer about the
+// same surface. Merging into a face above the wheels, or leaving one for an
+// empty lane, is the tumble. A change that ends before the piece never sees it.
+function checkSide(s, world) {
+  if (!s.changing || s.air) return false
+  var fromS = surfaceAt(world, s.laneFrom)
+  var toS = surfaceAt(world, s.laneTo)
+  var fromH = fromS ? fromS.height : 0
+  var toH = toS ? toS.height : 0
+  if (toH > fromH + SIDE_HIT || fromH > toH + SIDE_HIT) {
+    beginCrash(s)
+    return true
+  }
+  return false
 }
 
 function enterOverheat(s) {
@@ -564,6 +597,9 @@ function interactTrack(s, prevScroll, dt) {
   var x0 = prevScroll + s.x
   var x1 = s.scrollX + s.x
 
+  // Before the new lane's surface can catch the wheels.
+  if (checkSide(s, x1)) return
+
   if (s.air) {
     s.vy -= GRAVITY * dt
     s.height += s.vy * dt
@@ -626,6 +662,7 @@ function step(state, dt) {
   var pressedCrash = inp.crash && !s.prevInput.crash
   s.prevInput = { up: inp.up, down: inp.down, crash: inp.crash }
   s.t += dt
+  s.changing = false
 
   if (s.phase === "crash") {
     s.crashT += dt

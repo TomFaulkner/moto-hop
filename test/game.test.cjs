@@ -274,3 +274,110 @@ test("partial ramp does not launch other lanes", () => {
   assert.ok(!s.height)
   assert.notEqual(s.phase, "crash")
 })
+
+function airFramesOf(size, speed) {
+  const ramp = feature("ramp", size)
+  let s = place(ramp.x + ramp.len - 3, speed, ramp.lanes[0])
+  let guard = 0
+  while (!s.air && guard < 40) {
+    s = run(s, 1, {})
+    guard++
+  }
+  assert.equal(s.air, true, "expected launch from " + size)
+  let n = 1
+  guard = 0
+  while (s.air && guard < 500) {
+    s = run(s, 1, {})
+    guard++
+    if (s.air) n++
+  }
+  return n
+}
+
+test("big ramp airtime beats a small one", () => {
+  const small = airFramesOf("small", 120)
+  const big = airFramesOf("large", 120)
+  assert.ok(big > small, "big " + big + " small " + small)
+})
+
+test("mud slows hard", () => {
+  const mud = featureWhere((f) => f.type === "mud" && f.lanes.length === G.LANES)
+  const onMud = run(place(mud.x + 30, G.MAX_SPEED, mud.lanes[0]), 60, { throttle: true })
+  const onFlat = run(place(200, G.MAX_SPEED, 0), 60, { throttle: true })
+  assert.ok(onMud.speed <= G.MUD_MAX + 0.5, "mud speed " + onMud.speed)
+  assert.ok(onMud.speed < onFlat.speed * 0.5, "mud " + onMud.speed + " flat " + onFlat.speed)
+  assert.notEqual(onMud.phase, "crash")
+})
+
+test("down-slope landing with a matched pitch is clean", () => {
+  const jump = feature("double", "std")
+  const lip = jump.spans[0].x1
+  const down = [...jump.spans].reverse().find((sp) => sp.kind === "down" && sp.y0 > 40)
+  assert.ok(down, "double needs a tall down-slope")
+  let s = place(jump.x + lip - 30, 140, 0)
+  let guard = 0
+  while (!s.air && guard < 80) {
+    s = run(s, 1, { throttle: true })
+    guard++
+  }
+  assert.equal(s.air, true, "expected to leave the double's lip")
+  const launched = s.speed
+  guard = 0
+  while (s.air && guard < 500) {
+    s = run(s, 1, { right: s.tilt < down.slope - 0.8, left: s.tilt > down.slope + 0.8 })
+    guard++
+  }
+  const rel = s.scrollX + s.x - jump.x
+  assert.equal(s.air, false)
+  assert.notEqual(s.phase, "crash")
+  assert.ok(rel >= down.x0 && rel < down.x1, "rel " + rel)
+  assert.ok(s.height > 10, "height " + s.height)
+  assert.ok(Math.abs(s.tilt - down.slope) <= G.LAND_CLEAN_TOL, "tilt " + s.tilt + " slope " + down.slope)
+  assert.ok(Math.abs(s.speed - launched) < 0.05, "speed " + s.speed + " launched " + launched)
+})
+
+test("lane change before a raised piece is fine", () => {
+  const ramp = feature("ramp", "small")
+  let s = place(ramp.x - 140, 90, 1)
+  s = run(s, 1, { throttle: true, up: true })
+  s = run(s, 20, { throttle: true })
+  assert.equal(s.lane, 0)
+  assert.ok(s.scrollX + s.x < ramp.x, "world " + (s.scrollX + s.x) + " piece " + ramp.x)
+  assert.notEqual(s.phase, "crash")
+  assert.equal(s.air, false)
+})
+
+test("lane change along a full-width ramp stays on it", () => {
+  const ramp = feature("ramp", "medium")
+  assert.equal(ramp.lanes.length, G.LANES)
+  let s = place(ramp.x + ramp.len * 0.5, 60, 1)
+  s = run(s, 1, { down: true })
+  s = run(s, 20, {})
+  assert.equal(s.lane, 2)
+  assert.notEqual(s.phase, "crash")
+  assert.ok(s.height > G.SIDE_HIT, "height " + s.height)
+})
+
+test("changing lanes onto a raised piece crashes", () => {
+  const wall = feature("ramp", "large")
+  assert.ok(wall.lanes.indexOf(0) < 0)
+  const face = wall.spans[0]
+  const mid = face.x0 + (face.x1 - face.x0) * 0.55
+  let s = place(wall.x + mid, 70, 0)
+  s = run(s, 1, { down: true })
+  s = run(s, 8, {})
+  assert.equal(s.phase, "crash")
+})
+
+test("changing lanes off the side of a raised piece crashes", () => {
+  const bump = feature("bump", "small")
+  assert.ok(bump.lanes.indexOf(1) >= 0)
+  assert.ok(bump.lanes.indexOf(0) < 0)
+  // Past the toe, so the face is a wall and not a curb you can drop off.
+  let s = place(bump.x + 50, 40, 1)
+  const h = G.surfaceAt(bump.x + 50, 1)
+  assert.ok(h && h.height > G.SIDE_HIT, "height " + (h && h.height))
+  s = run(s, 1, { up: true })
+  s = run(s, 8, {})
+  assert.equal(s.phase, "crash")
+})
