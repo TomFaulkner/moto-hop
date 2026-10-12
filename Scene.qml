@@ -9,6 +9,23 @@ Item {
   readonly property int pixelScale: Math.max(1, Math.floor(Math.min(width / Game.VIEW_W, height / Game.VIEW_H)))
   readonly property string assetDir: Qt.resolvedUrl("assets/reactorcore/")
   readonly property var sprites: ["chassis_blue.png", "wheel.png", "fork.png"]
+  // Canvas is center-anchored and scaled about its middle; this is the visual top-left.
+  readonly property real viewLeft: canvas.x - (canvas.width * (pixelScale - 1)) / 2
+  readonly property real viewTop: canvas.y - (canvas.height * (pixelScale - 1)) / 2
+
+  function heatColor(heat, t) {
+    var band = Game.heatBand(heat || 0)
+    if (band === "flash" && (Math.floor((t || 0) * 8) % 2) === 0) return "#fcfcfc"
+    if (band === "flash" || band === "red") return "#f83800"
+    if (band === "yellow") return "#f8f800"
+    return "#58d854"
+  }
+  function hudPhase(g) {
+    if (!g) return ""
+    if (g.phase === "overheat") return "OVERHEAT"
+    if (g.input && g.input.turbo && g.phase !== "crash") return "TURBO"
+    return (g.phase || "").toUpperCase()
+  }
 
   onGameChanged: canvas.requestPaint()
 
@@ -117,19 +134,96 @@ Item {
       ctx.drawImage(img("fork.png"), S.fork.x, S.fork.y)
       ctx.restore()
 
-      // HUD
-      ctx.fillStyle = "#000000"; ctx.fillRect(0, 0, W, 13)
+      // Pixel smoke, drawn over the bike so puffs read on top of the engine.
+      var sm = g.smoke || []
+      for (var si = 0; si < sm.length; si++) {
+        var puff = sm[si]
+        var age = 1 - puff.life / puff.max
+        var px = Math.round(puff.x)
+        var py = Math.round(puff.y)
+        var blobs = [[0, 0, 2], [2, 1, 2], [-1, 2, 2]]
+        var bi
+        ctx.fillStyle = "#1a1a1a"
+        for (bi = 0; bi < blobs.length; bi++) {
+          var b = blobs[bi]
+          ctx.fillRect(px + b[0] - 1, py + b[1] - 1, b[2] + 2, b[2] + 2)
+        }
+        ctx.fillStyle = age < 0.8 ? "#f4f4f4" : "#a8a8a8"
+        for (bi = 0; bi < blobs.length; bi++) {
+          var f = blobs[bi]
+          ctx.fillRect(px + f[0], py + f[1], f[2], f[2])
+        }
+      }
+
+      // HUD band. Status text and the TEMP meter sit on top of this in screen space.
+      ctx.fillStyle = "#000000"; ctx.fillRect(0, 0, W, 24)
     }
   }
 
   Text {
     // HUD lives outside the low-res canvas so text stays legible.
-    x: canvas.x - (canvas.width * (scene.pixelScale - 1)) / 2 + 4 * scene.pixelScale
-    y: canvas.y - (canvas.height * (scene.pixelScale - 1)) / 2 + 1 * scene.pixelScale
+    id: hudText
+    x: scene.viewLeft + 4 * scene.pixelScale
+    y: scene.viewTop + 1 * scene.pixelScale
     font.family: "monospace"
     font.bold: true
     font.pixelSize: 9 * scene.pixelScale
-    color: "#fcfcfc"
-    text: Game.TITLE.toUpperCase() + "   " + scene.game.phase.toUpperCase() + "   LANE " + (scene.game.lane + 1) + "   " + Math.round(scene.game.speed) + " KM/H"
+    color: scene.game.phase === "overheat" ? scene.heatColor(Game.HEAT_FLASH, scene.game.t) : "#fcfcfc"
+    text: Game.TITLE.toUpperCase() + "   " + scene.hudPhase(scene.game) + "   LANE " + (scene.game.lane + 1) + "   " + Math.round(scene.game.speed) + " KM/H"
+  }
+
+  Item {
+    id: tempHud
+    x: scene.viewLeft + 4 * scene.pixelScale
+    y: scene.viewTop + 13 * scene.pixelScale
+    width: (Game.VIEW_W - 8) * scene.pixelScale
+    height: 8 * scene.pixelScale
+
+    Text {
+      text: "TEMP"
+      font.family: "monospace"
+      font.bold: true
+      font.pixelSize: 8 * scene.pixelScale
+      color: "#fcfcfc"
+      anchors.verticalCenter: parent.verticalCenter
+    }
+    Rectangle {
+      id: tempTrack
+      x: 30 * scene.pixelScale
+      anchors.verticalCenter: parent.verticalCenter
+      width: parent.width - x
+      height: 7 * scene.pixelScale
+      color: "#000000"
+      border.color: "#fcfcfc"
+      border.width: scene.pixelScale
+
+      Rectangle {
+        x: parent.border.width
+        y: parent.border.width
+        height: parent.height - parent.border.width * 2
+        width: Math.max(0, (parent.width - parent.border.width * 2) * Math.max(0, Math.min(1, (scene.game.heat || 0) / Game.HEAT_MAX)))
+        color: scene.heatColor(scene.game.heat, scene.game.t)
+      }
+    }
+  }
+
+  Rectangle {
+    visible: scene.game.phase === "overheat"
+    x: overheatText.x - 6 * scene.pixelScale
+    y: overheatText.y - 2 * scene.pixelScale
+    width: overheatText.width + 12 * scene.pixelScale
+    height: overheatText.height + 4 * scene.pixelScale
+    color: "#000000"
+  }
+  Text {
+    id: overheatText
+    visible: scene.game.phase === "overheat"
+    text: "OVERHEAT"
+    font.family: "monospace"
+    font.bold: true
+    font.pixelSize: 16 * scene.pixelScale
+    color: (Math.floor((scene.game.t || 0) * 8) % 2 === 0) ? "#f83800" : "#fcfcfc"
+    x: scene.viewLeft + (Game.VIEW_W * scene.pixelScale - width) / 2
+    y: scene.viewTop + 32 * scene.pixelScale
   }
 }

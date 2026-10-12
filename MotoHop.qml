@@ -12,7 +12,7 @@ Item {
   property var manifest: null
   property bool opened: false
   property var game: Game.initialState()
-  property var held: ({ up: false, down: false, left: false, right: false, throttle: false, crash: false })
+  property var held: ({ up: false, down: false, left: false, right: false, throttle: false, turbo: false, crash: false })
   property double lastTick: 0
 
   function open(payloadJson) {
@@ -29,7 +29,7 @@ Item {
   function toggle() { if (opened) dismiss(); else open("{}") }
 
   function releaseAll() {
-    held = { up: false, down: false, left: false, right: false, throttle: false, crash: false }
+    held = { up: false, down: false, left: false, right: false, throttle: false, turbo: false, crash: false }
   }
   function keyName(key) {
     switch (key) {
@@ -38,6 +38,7 @@ Item {
     case Qt.Key_Left: case Qt.Key_A: return "left"
     case Qt.Key_Right: case Qt.Key_D: return "right"
     case Qt.Key_Space: case Qt.Key_Z: case Qt.Key_J: return "throttle"
+    case Qt.Key_Shift: case Qt.Key_K: return "turbo"
     case Qt.Key_X: case Qt.Key_C: return "crash"
     }
     return ""

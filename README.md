@@ -7,8 +7,11 @@ Working title; to rename, change `TITLE` in `Game.js` plus `id`/`name` in
 
 No physics engine: hand-rolled arcade rules and state in `Game.js`.
 
-**Milestone 1 (this):** bike render only. Flat scrolling track, 4 lanes, spinning
-wheels, wheelie / nose-down lean, lane changes, crash tumble.
+**Milestone 1:** bike render. Flat scrolling track, 4 lanes, spinning wheels,
+wheelie / nose-down lean, lane changes, crash tumble.
+
+**Milestone 2a (this):** turbo and engine heat. Turbo raises the speed cap and
+fills a TEMP bar; at 100 the bike overheats, coasts to a stop, and cools down.
 
 ## Layout
 
@@ -20,7 +23,8 @@ wheels, wheelie / nose-down lean, lane changes, crash tumble.
 
 ## Controls
 
-- `Space` / `Z` / `J`: throttle (hold)
+- `Space` / `Z` / `J`: throttle (hold). Top speed as tuned; heat slowly cools.
+- `Shift` / `K`: turbo (hold). Higher top speed, faster acceleration, heat rises.
 - `←` / `A`: lean back (wheelie, at speed)  ·  `→` / `D`: lean forward
 - `↑` `↓` / `W` `S`: change lane
 - `X` / `C`: crash (debug pose)
@@ -43,6 +47,6 @@ QT_QPA_PLATFORM=offscreen python tools/shoot.py screens   # needs PySide6 6.x
 ```
 
 `shoot.py` renders `Scene.qml` (the same file the plugin uses) offscreen and
-writes `idle`, `riding`, `wheelie`, `lane`, `crash`, `crashed` PNGs.
+writes `idle`, `riding`, `wheelie`, `lane`, `crash`, `crashed`, `turbo`, `overheat` PNGs.
 
 See `CREDITS.md` for asset sources and licenses.
