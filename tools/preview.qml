@@ -103,6 +103,19 @@ Window {
       // Rear wheel on the short top, lip just ahead, mud / boost / rumble in view.
       s = place(s, 2, big.x + big.len - 18, 70)
       s = play(s, 1, { throttle: true })
+    } else if (name === "pieces-closeup") {
+      // Front toe of the small bump, the tiny bump, and the wide hump's rise.
+      // Lane 0 is open so the bike sits above the mounds.
+      var tiny = course("bump", "tiny")
+      s = place(s, 0, tiny.x - 70, 36)
+      s = play(s, 1, {})
+    } else if (name === "finish") {
+      // Just past the loop line: checkers across the lanes, lap clock running.
+      s = place(s, 1, Game.COURSE_LEN + 24, 88)
+      s.lap = 2
+      s.lapTime = 0.42
+      s.lastLap = 61.08
+      s = play(s, 4, { throttle: true })
     } else if (name === "ramp-climb") {
       // Tom's bug view: climbing the big ramp with the bypass lane beside it.
       var climb = course("ramp", "large")
