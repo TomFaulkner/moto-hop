@@ -103,6 +103,11 @@ Window {
       // Rear wheel on the short top, lip just ahead, mud / boost / rumble in view.
       s = place(s, 2, big.x + big.len - 18, 70)
       s = play(s, 1, { throttle: true })
+    } else if (name === "ramp-climb") {
+      // Tom's bug view: climbing the big ramp with the bypass lane beside it.
+      var climb = course("ramp", "large")
+      s = place(s, 2, climb.x + 60, 90)
+      s = play(s, 1, { throttle: true })
     } else if (name === "rumble") {
       var teeth = null
       for (var ri = 0; ri < Game.COURSE.length; ri++) {

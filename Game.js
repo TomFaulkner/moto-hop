@@ -186,12 +186,15 @@ var BUMP_SPEC = {
 // test launch lands before the next raised piece. The boost on lane 0 has
 // a long clear run after it: the boost test rolls on from the strip.
 // Mud and boost never list every lane — leave a line to steer.
+// Surface patches never share x with a raised piece in ANY lane: tall
+// ramps rise over the neighbouring lanes on screen, so a patch beside one
+// draws on its slope.
 var COURSE_LEN = 10800
 var COURSE = [
   // Short hop. Grass on the bypass lanes; a short mud on the landing lanes
   // that a full jump clears and a crawl lands in.
   { type: "ramp", size: "small", x: 1400, lanes: [0, 1] },
-  { type: "grass", x: 1420, len: 72, lanes: [2, 3] },
+  { type: "grass", x: 1580, len: 72, lanes: [2, 3] },
   { type: "mud", x: 1496, len: 56, lanes: [0, 1] },
   { type: "cool", x: 1720, len: 96, lanes: [0, 1] },
   // Full-width gentle ramp. Landing mud only on the lower pair.
@@ -201,13 +204,13 @@ var COURSE = [
   // Lane 0 stays down. Landing mud on the ramp lanes, then a partial boost
   // beside a rumble strip so the next straight is a choice.
   { type: "ramp", size: "large", x: 2900, lanes: [1, 2, 3] },
-  { type: "grass", x: 2940, len: 88, lanes: [0] },
+  { type: "grass", x: 3160, len: 88, lanes: [0] },
   { type: "mud", x: 3164, len: 64, lanes: [1, 2, 3] },
   { type: "boost", x: 3280, len: 80, lanes: [0, 1] },
   { type: "rumble", x: 3360, len: 108, lanes: [2, 3] },
   // Steep face, a landing mud the jump clears, bumps to thread, a mound.
   { type: "ramp", size: "steep", x: 4600, lanes: [0, 1] },
-  { type: "grass", x: 4620, len: 80, lanes: [2, 3] },
+  { type: "grass", x: 4720, len: 80, lanes: [2, 3] },
   { type: "mud", x: 4716, len: 56, lanes: [0, 1] },
   { type: "bump", size: "small", x: 5160, lanes: [1, 2] },
   { type: "bump", size: "tiny", x: 5400, lanes: [3] },

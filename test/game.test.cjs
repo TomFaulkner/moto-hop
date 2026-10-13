@@ -317,7 +317,8 @@ test("mud slows hard", () => {
   assert.ok(onMud.speed <= G.MUD_MAX + 0.5, "mud speed " + onMud.speed)
   assert.ok(onMud.speed < onFlat.speed * 0.5, "mud " + onMud.speed + " flat " + onFlat.speed)
   assert.notEqual(onMud.phase, "crash")
-  const open = [0, 1, 2, 3].find((l) => mud.lanes.indexOf(l) < 0)
+  const near = G.COURSE.filter((f) => f.x < mud.x + 200 && f.x + (f.len || 0) > mud.x)
+  const open = [0, 1, 2, 3].find((l) => near.every((f) => f.lanes.indexOf(l) < 0))
   const missed = run(place(mud.x + 8, G.MAX_SPEED, open), 30, { throttle: true })
   assert.ok(missed.speed > G.MAX_SPEED - 1, "open lane speed " + missed.speed)
 })
@@ -638,9 +639,9 @@ test("jumping a ramp clears the landing mud", () => {
   assert.equal(s.air, false)
 })
 
-test("bypass beside a ramp is slower than taking it", () => {
+test("bypass after a ramp is slower than taking it", () => {
   const ramp = feature("ramp", "small")
-  const grass = G.COURSE.find((f) => f.type === "grass" && f.x >= ramp.x && f.x < ramp.x + ramp.len && f.lanes.some((l) => ramp.lanes.indexOf(l) < 0))
+  const grass = G.COURSE.find((f) => f.type === "grass" && f.x >= ramp.x + ramp.len && f.x < ramp.x + ramp.len + 200 && f.lanes.some((l) => ramp.lanes.indexOf(l) < 0))
   assert.ok(grass, "small ramp needs bypass grass")
   const lane = grass.lanes[0]
   let onGrass = place(grass.x + 6, G.MAX_SPEED, lane)
@@ -679,4 +680,23 @@ test("rumble jolts and slows, and an open lane misses it", () => {
   assert.ok(missed.speed > G.MAX_SPEED - 1, "open " + missed.speed)
   assert.ok(!missed.height)
   assert.notEqual(missed.phase, "rumble")
+})
+
+test("surface patches never overlap raised pieces in any lane across laps", () => {
+  const PATCH = ["grass", "mud", "boost", "rumble", "cool"]
+  const items = []
+  for (let lap = 0; lap < 4; lap++) {
+    for (const f of G.COURSE) {
+      const raised = f.spans && f.spans.length > 0
+      const len = raised ? f.spans[f.spans.length - 1].x1 : f.len
+      items.push({ f, raised, x0: f.x + lap * G.COURSE_LEN, x1: f.x + len + lap * G.COURSE_LEN })
+    }
+  }
+  const patches = items.filter(i => PATCH.includes(i.f.type))
+  const raised = items.filter(i => i.raised)
+  assert.ok(patches.length > 0 && raised.length > 0)
+  for (const p of patches) for (const r of raised) {
+    const overlap = p.x0 < r.x1 + 8 && r.x0 < p.x1 + 8
+    assert.ok(!overlap, `${p.f.type}@${p.x0} overlaps ${r.f.type}@${r.x0}`)
+  }
 })
