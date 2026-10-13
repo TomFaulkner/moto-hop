@@ -147,6 +147,8 @@ Item {
         if (u > 1) u = 1
         var h = sp.y0 + (sp.y1 - sp.y0) * u
         if (h < 3) continue
+        // Flat tops get no band: it read as a dark slab under the plateau edge.
+        if (sp.y0 === sp.y1) continue
         var top = columnTop(base, h, 1)
         var y0 = top + (sp.kind === "flat" ? 3 : 2)
         var y1 = y0 + depth
@@ -395,8 +397,17 @@ Item {
       } else if (g.phase !== "crash" && (g.height || 0) > 0.5) {
         shadowY = p.y
       }
-      ctx.fillStyle = "rgba(0,0,0,0.3)"
-      ctx.fillRect(Math.round(g.x - 4 + (66 - shadowW) / 2), Math.round(shadowY - 2 + cam), shadowW, 3)
+      // A flat bar cannot follow a slope or plateau edge, so hide it when
+      // any part of it would sit over a raised piece in this lane.
+      var shX = Math.round(g.x - 4 + (66 - shadowW) / 2)
+      var overRaised = false
+      for (var k = 0; k <= 4; k++) {
+        if (Game.surfaceAt(sx + shX + shadowW * k / 4, g.lane)) overRaised = true
+      }
+      if (!overRaised) {
+        ctx.fillStyle = "rgba(0,0,0,0.3)"
+        ctx.fillRect(shX, Math.round(g.laneY - 2 + cam), shadowW, 3)
+      }
 
       // Bike, rotated about the rear-wheel contact point
       var S = Game.SPRITE

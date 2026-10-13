@@ -121,6 +121,11 @@ Window {
       var climb = course("ramp", "large")
       s = place(s, 2, climb.x + 60, 90)
       s = play(s, 1, { throttle: true })
+    } else if (name === "ramp-top") {
+      // Tom's view: stopped at the slope/plateau join of the giant table, lane 2.
+      var gt = course("table", "giant")
+      s = place(s, 2, gt.x + gt.spans[0].x1 - 20, 0)
+      s = play(s, 1, {})
     } else if (name === "rumble") {
       var teeth = null
       for (var ri = 0; ri < Game.COURSE.length; ri++) {

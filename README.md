@@ -74,6 +74,6 @@ QT_QPA_PLATFORM=offscreen python tools/shoot.py screens   # needs PySide6 6.x
 writes `idle`, `riding`, `wheelie`, `lane`, `crash`, `crashed`, `turbo`, `overheat`,
 `ramp-up`, `airborne`, `cool-arrow`, `boost`, `land-crash`, `wide-partial`,
 `hazards`, `rumble`, `nose`, `downhill`, `ramp-climb`, `pieces-closeup`,
-`finish` PNGs.
+`finish`, `ramp-top` PNGs.
 
 See `CREDITS.md` for asset sources and licenses.
