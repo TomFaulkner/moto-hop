@@ -15,7 +15,7 @@ out.mkdir(parents=True, exist_ok=True)
 SCENES = ["idle", "riding", "wheelie", "lane", "crash", "crashed", "turbo", "overheat",
           "ramp-up", "airborne", "cool-arrow", "boost", "land-crash",
           "big-ramp", "airborne-big", "side-crash", "pieces-overview", "mud", "giant",
-          "wide-partial"]
+          "wide-partial", "hazards", "rumble", "nose", "downhill"]
 
 app = QGuiApplication(sys.argv)
 eng = QQmlApplicationEngine()

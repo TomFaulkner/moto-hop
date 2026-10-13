@@ -97,6 +97,27 @@ Window {
       var steep = course("ramp", "steep")
       s = place(s, 3, steep.x + 40, 80)
       s = play(s, 1, { throttle: true })
+    } else if (name === "hazards") {
+      // Lip of the big ramp, the landing mud it clears, a partial boost, and rumble teeth.
+      var big = course("ramp", "large")
+      // Rear wheel on the short top, lip just ahead, mud / boost / rumble in view.
+      s = place(s, 2, big.x + big.len - 18, 70)
+      s = play(s, 1, { throttle: true })
+    } else if (name === "rumble") {
+      var teeth = null
+      for (var ri = 0; ri < Game.COURSE.length; ri++) {
+        var piece = Game.COURSE[ri]
+        if (piece.type === "rumble" && piece.lanes.indexOf(2) >= 0) teeth = piece
+      }
+      s = place(s, teeth.lanes[0], teeth.x + 16, 48)
+      s = play(s, 4, { throttle: true })
+    } else if (name === "nose") {
+      s = play(s, 40, { throttle: true, right: true })
+    } else if (name === "downhill") {
+      var table = course("table", "long")
+      var face = table.spans[table.spans.length - 1]
+      s = place(s, table.lanes[0], table.x + face.x0 + 36, Game.MAX_SPEED)
+      s = play(s, 18, { throttle: true })
     } else if (name === "bump") {
       var bump = course("bump", "small")
       s = place(s, bump.lanes[0], bump.x + 36, 40)
