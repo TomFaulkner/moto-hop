@@ -145,9 +145,11 @@ function place(worldX, speed, lane, extra) {
 // Ride off the lip. Returns the first airborne state.
 function flyOff(size, speed) {
   const ramp = feature("ramp", size)
-  let s = place(ramp.x + ramp.len - 3, speed, ramp.lanes[0])
+  // Far enough back that one fast frame cannot skip the lip, close enough
+  // that a slow coast still reaches it before stopping.
+  let s = place(ramp.x + ramp.len - 10, speed, ramp.lanes[0])
   let guard = 0
-  while (!s.air && guard < 40) {
+  while (!s.air && guard < 80) {
     s = run(s, 1, {})
     guard++
   }
@@ -228,8 +230,8 @@ test("cooling arrow ignores other lanes", () => {
 
 test("boost raises speed temporarily then decays", () => {
   assert.equal(G.ENABLE_BOOST_STRIPS, true)
-  const strip = featureWhere((f) => f.type === "boost" && f.lanes.length === G.LANES)
-  let s = place(strip.x - 4, G.MAX_SPEED, 1, { heat: 55 })
+  const strip = featureWhere((f) => f.type === "boost" && f.lanes.length < G.LANES && f.lanes.indexOf(0) >= 0)
+  let s = place(strip.x - 4, G.MAX_SPEED, 0, { heat: 55 })
   const startHeat = s.heat
   let peak = s.speed
   let sawDecay = false
@@ -277,9 +279,9 @@ test("partial ramp does not launch other lanes", () => {
 
 function airFramesOf(size, speed) {
   const ramp = feature("ramp", size)
-  let s = place(ramp.x + ramp.len - 3, speed, ramp.lanes[0])
+  let s = place(ramp.x + ramp.len - 10, speed, ramp.lanes[0])
   let guard = 0
-  while (!s.air && guard < 40) {
+  while (!s.air && guard < 80) {
     s = run(s, 1, {})
     guard++
   }
@@ -301,12 +303,23 @@ test("big ramp airtime beats a small one", () => {
 })
 
 test("mud slows hard", () => {
-  const mud = featureWhere((f) => f.type === "mud" && f.lanes.length === G.LANES)
-  const onMud = run(place(mud.x + 30, G.MAX_SPEED, mud.lanes[0]), 60, { throttle: true })
+  const mud = featureWhere((f) => f.type === "mud" && f.lanes.length < G.LANES)
+  const lane = mud.lanes[0]
+  let onMud = place(mud.x + 8, G.MAX_SPEED, lane)
+  let guard = 0
+  while (onMud.speed > G.MUD_MAX + 0.5 && guard < 40) {
+    onMud = run(onMud, 1, { throttle: true })
+    guard++
+    const wx = onMud.scrollX + onMud.x
+    assert.ok(wx < mud.x + mud.len, "left the mud at " + wx + " before slowing")
+  }
   const onFlat = run(place(200, G.MAX_SPEED, 0), 60, { throttle: true })
   assert.ok(onMud.speed <= G.MUD_MAX + 0.5, "mud speed " + onMud.speed)
   assert.ok(onMud.speed < onFlat.speed * 0.5, "mud " + onMud.speed + " flat " + onFlat.speed)
   assert.notEqual(onMud.phase, "crash")
+  const open = [0, 1, 2, 3].find((l) => mud.lanes.indexOf(l) < 0)
+  const missed = run(place(mud.x + 8, G.MAX_SPEED, open), 30, { throttle: true })
+  assert.ok(missed.speed > G.MAX_SPEED - 1, "open lane speed " + missed.speed)
 })
 
 test("down-slope landing with a matched pitch is clean", () => {
@@ -460,4 +473,210 @@ test("open lane skips the giant table", () => {
   assert.equal(s.air, false)
   assert.ok(!s.height)
   assert.notEqual(s.phase, "crash")
+})
+
+test("displayed caps stay 120 and 180 while the world moves faster", () => {
+  assert.equal(G.MAX_SPEED, 120)
+  assert.equal(G.TURBO_SPEED, 180)
+  assert.ok(G.WORLD_SCALE >= 1.45 && G.WORLD_SCALE <= 1.55, "scale " + G.WORLD_SCALE)
+  let s = place(200, G.MAX_SPEED, 0)
+  const x0 = s.scrollX + s.x
+  s = run(s, 60, { throttle: true })
+  const moved = s.scrollX + s.x - x0
+  assert.ok(Math.abs(s.speed - G.MAX_SPEED) < 0.5, "speed " + s.speed)
+  assert.ok(moved > G.MAX_SPEED * 1.4, "moved " + moved)
+  assert.ok(moved < G.MAX_SPEED * 1.6, "moved " + moved)
+})
+
+test("standing turbo still ends on the empty straight", () => {
+  let s = G.initialState()
+  let frames = 0
+  while (s.phase !== "overheat") {
+    s = run(s, 1, { turbo: true })
+    frames++
+    assert.ok(frames < 400, "heat should still lock in a few seconds")
+  }
+  const world = s.scrollX + s.x
+  assert.ok(world < G.COURSE[0].x, "world " + world + " first " + G.COURSE[0].x)
+  assert.ok(s.heat === G.HEAT_MAX)
+})
+
+function frontBottom(pose, tilt) {
+  const S = G.SPRITE
+  const rad = tilt * Math.PI / 180
+  const dx = S.frontHub.x - S.rearHub.x
+  const dy = S.frontHub.y - S.h
+  return pose.y + dx * Math.sin(rad) + dy * Math.cos(rad) + S.wheelR
+}
+
+test("flat forward lean keeps the front tire on the road", () => {
+  let s = run(G.initialState(), 40, { throttle: true })
+  s = run(s, 40, { throttle: true, right: true })
+  assert.ok(s.tilt > 8, "tilt " + s.tilt)
+  assert.ok(s.tilt <= G.NOSE_DEG + 0.01, "tilt " + s.tilt)
+  assert.equal(s.air, false)
+  assert.ok(!s.height)
+  const bottom = frontBottom(G.pose(s), s.tilt)
+  assert.ok(bottom <= s.laneY + 0.05, "front " + bottom + " road " + s.laneY)
+  assert.ok(bottom >= s.laneY - 1.05, "front " + bottom + " road " + s.laneY)
+})
+
+test("wheelie still plants the rear and lifts the front", () => {
+  let s = run(G.initialState(), 30, { throttle: true })
+  s = run(s, 30, { throttle: true, left: true })
+  assert.ok(s.tilt < -20)
+  const p = G.pose(s)
+  assert.ok(Math.abs(p.y - s.laneY) <= 0.5, "rear " + p.y)
+  const bottom = frontBottom(p, s.tilt)
+  assert.ok(bottom < s.laneY - 10, "front " + bottom)
+})
+
+test("downhill throttle climbs past top speed then fades", () => {
+  const table = feature("table", "long")
+  const down = table.spans.find((sp) => sp.kind === "down")
+  assert.ok(down)
+  const bonus = G.downhillBonus(down.slope)
+  assert.ok(bonus > 8 && bonus < 28, "bonus " + bonus)
+  let s = place(table.x + down.x0 + 10, G.MAX_SPEED, table.lanes[0])
+  let peak = s.speed
+  let guard = 0
+  let settled = false
+  while (guard < 240) {
+    const rel = s.scrollX + s.x - table.x
+    const onDown = rel >= down.x0 && rel < down.x1
+    s = run(s, 1, { throttle: true })
+    if (onDown && s.speed > peak) peak = s.speed
+    if (!onDown && peak > G.MAX_SPEED + bonus * 0.7 && s.speed <= G.MAX_SPEED + 0.5) {
+      settled = true
+      break
+    }
+    guard++
+  }
+  assert.ok(peak > G.MAX_SPEED + bonus * 0.7, "peak " + peak + " bonus " + bonus)
+  assert.ok(peak <= G.MAX_SPEED + bonus + 0.6, "peak " + peak)
+  assert.ok(settled, "speed " + s.speed + " peak " + peak)
+  assert.notEqual(s.phase, "crash")
+})
+
+test("downhill turbo climbs past the turbo cap without an early overheat", () => {
+  const table = feature("table", "long")
+  const down = table.spans.find((sp) => sp.kind === "down")
+  const bonus = G.downhillBonus(down.slope)
+  let s = place(table.x + down.x0 + 10, G.TURBO_SPEED, table.lanes[0], { heat: 10 })
+  let peak = s.speed
+  let guard = 0
+  let settled = false
+  while (guard < 240) {
+    const rel = s.scrollX + s.x - table.x
+    const onDown = rel >= down.x0 && rel < down.x1
+    s = run(s, 1, { turbo: true })
+    if (onDown && s.speed > peak) peak = s.speed
+    if (!onDown && peak > G.TURBO_SPEED + 4 && s.speed <= G.TURBO_SPEED + 0.5) {
+      settled = true
+      break
+    }
+    guard++
+  }
+  assert.ok(peak > G.TURBO_SPEED + bonus * 0.7, "peak " + peak)
+  assert.ok(peak <= G.TURBO_SPEED + bonus + 0.6, "peak " + peak)
+  assert.ok(settled, "speed " + s.speed)
+  assert.ok(s.heat > 10 && s.heat < G.HEAT_MAX, "heat " + s.heat)
+  assert.notEqual(s.phase, "overheat")
+  assert.notEqual(s.phase, "crash")
+})
+
+test("coasting downhill does not add speed", () => {
+  const table = feature("table", "long")
+  const down = table.spans.find((sp) => sp.kind === "down")
+  let s = place(table.x + down.x0 + 10, G.MAX_SPEED, table.lanes[0])
+  s = run(s, 20, {})
+  assert.ok(s.speed < G.MAX_SPEED - 5, "speed " + s.speed)
+})
+
+test("mud and boost leave a lane open and stay short", () => {
+  const muds = G.COURSE.filter((f) => f.type === "mud")
+  const boosts = G.COURSE.filter((f) => f.type === "boost")
+  assert.ok(muds.length >= 2)
+  assert.ok(boosts.length >= 1)
+  for (const f of muds) {
+    assert.ok(f.lanes.length < G.LANES, "mud lanes " + f.lanes)
+    assert.ok(f.len <= 80, "mud len " + f.len)
+  }
+  for (const f of boosts) {
+    assert.ok(f.lanes.length < G.LANES, "boost lanes " + f.lanes)
+    assert.ok(f.len <= 100, "boost len " + f.len)
+  }
+})
+
+test("jumping a ramp clears the landing mud", () => {
+  const ramp = feature("ramp", "small")
+  const lane = ramp.lanes[0]
+  const mud = G.COURSE.find((f) => f.type === "mud" && f.x >= ramp.x + ramp.len && f.x < ramp.x + ramp.len + 180 && f.lanes.indexOf(lane) >= 0)
+  assert.ok(mud, "small ramp needs a landing mud")
+  let grounded = place(mud.x + 6, G.MAX_SPEED, lane)
+  let guard = 0
+  while (grounded.speed > G.MUD_MAX + 0.5 && guard < 40) {
+    grounded = run(grounded, 1, { throttle: true })
+    guard++
+  }
+  assert.ok(grounded.speed <= G.MUD_MAX + 0.5, "ground " + grounded.speed)
+
+  let s = flyOff("small", G.MAX_SPEED)
+  let over = false
+  let slowest = s.speed
+  guard = 0
+  while ((s.air || s.scrollX + s.x < mud.x + mud.len) && guard < 500) {
+    const wx = s.scrollX + s.x
+    if (s.air && wx >= mud.x && wx < mud.x + mud.len) over = true
+    if (s.speed < slowest) slowest = s.speed
+    s = run(s, 1, {})
+    guard++
+  }
+  assert.ok(over, "the jump should pass over the mud")
+  assert.ok(slowest > G.MUD_MAX + 30, "speed " + slowest)
+  assert.notEqual(s.phase, "crash")
+  assert.equal(s.air, false)
+})
+
+test("bypass beside a ramp is slower than taking it", () => {
+  const ramp = feature("ramp", "small")
+  const grass = G.COURSE.find((f) => f.type === "grass" && f.x >= ramp.x && f.x < ramp.x + ramp.len && f.lanes.some((l) => ramp.lanes.indexOf(l) < 0))
+  assert.ok(grass, "small ramp needs bypass grass")
+  const lane = grass.lanes[0]
+  let onGrass = place(grass.x + 6, G.MAX_SPEED, lane)
+  let guard = 0
+  while (onGrass.speed > G.GRASS_MAX + 0.5 && guard < 50) {
+    onGrass = run(onGrass, 1, { throttle: true })
+    guard++
+    assert.ok(onGrass.scrollX + onGrass.x < grass.x + grass.len, "left the grass before slowing")
+  }
+  assert.ok(onGrass.speed <= G.GRASS_MAX + 0.5, "grass " + onGrass.speed)
+  assert.notEqual(onGrass.phase, "crash")
+})
+
+test("rumble jolts and slows, and an open lane misses it", () => {
+  const strip = featureWhere((f) => f.type === "rumble" && f.lanes.indexOf(2) < 0 && f.lanes.indexOf(3) < 0)
+  assert.ok(strip.len >= G.RUMBLE_TOOTH * 4, "len " + strip.len)
+  const lane = strip.lanes[0]
+  let s = place(strip.x + 2, G.MAX_SPEED, lane)
+  const heights = []
+  let noseUp = false
+  for (let i = 0; i < 50; i++) {
+    s = run(s, 1, { throttle: true })
+    heights.push(s.height || 0)
+    if (s.tilt <= -G.RUMBLE_TILT + 0.1) noseUp = true
+    const wx = s.scrollX + s.x
+    assert.ok(wx < strip.x + strip.len, "left the rumble at " + wx)
+  }
+  assert.ok(Math.max(...heights) >= G.RUMBLE_H - 1, "heights " + heights.join(","))
+  assert.ok(Math.min(...heights) <= 1, "heights " + Math.min(...heights))
+  assert.ok(noseUp, "expected a nose-up jolt")
+  assert.ok(s.speed <= G.RUMBLE_MAX + 0.5, "speed " + s.speed)
+  assert.equal(s.phase, "rumble")
+  assert.notEqual(s.phase, "crash")
+  const open = [0, 1, 2, 3].find((l) => strip.lanes.indexOf(l) < 0)
+  const missed = run(place(strip.x + 2, G.MAX_SPEED, open), 20, { throttle: true })
+  assert.ok(missed.speed > G.MAX_SPEED - 1, "open " + missed.speed)
+  assert.ok(!missed.height)
+  assert.notEqual(missed.phase, "rumble")
 })

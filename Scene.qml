@@ -226,6 +226,29 @@ Item {
       }
     }
 
+    // Excitebike washboard: a run of tiny teeth. Heights come from the same
+    // tooth the rear wheel rides, so the tire sits on the pixel crest.
+    function drawRumble(ctx, sx, len, base) {
+      var x0 = Math.floor(sx)
+      var span = Math.max(1, Math.round(len))
+      ctx.fillStyle = "#2a160c"
+      ctx.fillRect(x0, base - 2, span, 4)
+      for (var i = 0; i < span; i++) {
+        var sample = Game.rumbleSample((x0 + i + 0.5) - sx)
+        var h = sample.h
+        if (h < 1) continue
+        var top = Math.round(base - h)
+        ctx.fillStyle = sample.rising ? "#8d5226" : "#5a3014"
+        ctx.fillRect(x0 + i, top, 1, Math.round(base) + 2 - top)
+        ctx.fillStyle = sample.rising ? "#e2b060" : "#c08040"
+        ctx.fillRect(x0 + i, top, 1, 1)
+        if (h >= Game.RUMBLE_H) {
+          ctx.fillStyle = "#f4e2b4"
+          ctx.fillRect(x0 + i, top, 1, 1)
+        }
+      }
+    }
+
     function drawGrass(ctx, sx, len, base) {
       var x0 = Math.floor(sx)
       var span = Math.max(1, Math.round(len))
@@ -264,6 +287,7 @@ Item {
             else if (f.type === "boost") drawBoost(ctx, sx0, f.len, base)
             else if (f.type === "mud") drawMud(ctx, sx0, f.len, base)
             else if (f.type === "grass") drawGrass(ctx, sx0, f.len, base)
+            else if (f.type === "rumble") drawRumble(ctx, sx0, f.len, base)
           }
         }
       }

@@ -39,6 +39,13 @@ On the near edge, where the next lane does not have the piece, `Scene.qml`
 draws a dark side face under the riding surface. The drawn crust is one pixel
 into the tire so the wheel meets the dirt.
 
+Mud, grass, boost, and rumble are ground strips. A strip only covers the lanes
+in its `lanes` array. The course never puts mud or boost on every lane, and
+those strips are short, so the open lane is the way around a hazard or into a
+boost. Patches after a ramp sit on the landing lanes, under the arc, and on
+the lanes that bypass the ramp. A jump clears the landing patch. Riding the
+bypass does not.
+
 `cameraY` drops the horizon when the bike or a lip already on screen would
 pass under the HUD, so a 3.5-bike table and the air above it stay in the
 384×224 view.
@@ -56,15 +63,16 @@ pass under the HUD, so a 3.5-bike table and the air above it stay in the
 | Hurdle G | 47×73 | Mirror of F, steep back face. | Full | Jump | `ramp` `steep` (same family) |
 | Hurdle H | 16×40 | Low wedge, about two lanes wide. | Partial | Small kick | `bump` `small` |
 | Hurdles I & J | 8×32 | Tiny low bumps. | Partial | Light disturbance | `bump` `tiny` |
-| Hurdles K & L | 24×48 | Small mud patches. | Partial | Heavy slow | `mud` (partial lanes) |
+| Hurdles K & L | 24×48 | Small mud patches. | Partial | Heavy slow | `mud` (partial lanes, short) |
 | Hurdles M & N | 16×8 | Single-lane cooling chevrons. | One lane | Heat to 0 | `cool` |
-| Hurdle O | 200×48 | Long mud strip. | Full | Heavy slow | `mud` (all lanes) |
+| Hurdle O | 200×48 | Long mud strip. | Full | Heavy slow | Not used. Our mud stays partial and short. |
 | Hurdle P | 200×48 | Long grass strip. | Full | Slow | `grass` |
 | Hurdle Q | 96×48 | Short grass strip. | Full | Slow | `grass` (shorter `len`) |
 | Hurdle R | 208×96 | Long up, long plateau, steep drop. About 3–4 bikes. | Full | Land on top, or launch off the end | `table` `giant` |
 | Hurdle S | 216×96 | Up to a lip, gap with humps below, down-slope landing. | Full | Double jump | `double` |
+| Rough run | — | Series of tiny teeth, like hurdles I and J repeated. | Partial | Jolt and slow | `rumble` |
 
-`boost` is ours, not an NES piece: a one-second burst above the turbo cap that adds no heat (`ENABLE_BOOST_STRIPS`).
+`boost` is ours, not an NES piece: a one-second burst above the turbo cap that adds no heat (`ENABLE_BOOST_STRIPS`). It is partial-lane, something you steer into. `rumble` is the washboard: our pixels, the repeated-bump idea from the NES rough sections.
 
 ## Our profiles
 
@@ -82,9 +90,10 @@ Heights are the peak above the lane. Angles are the face angle.
 | `double` | 120px, 2.8 bikes | Up 180 (34°), gap, two 14px humps, down 200 (31°) | Jump the gap and land on the down-slope. |
 | `bump` `small` | 16px | Up 70, down 70 (13°), lanes `[1, 2]` | Partial mound, side face on the near lane. |
 | `bump` `tiny` | 8px | Up 40, down 40 (11°), one lane | Smaller partial mound, side face drawn. |
-| `mud` | 0 | Ground strip, `len` from the course entry | Speed falls to 40. Full strip or a partial one. |
+| `mud` | 0 | Ground strip, short `len`, partial lanes | Speed falls to 40. The course keeps a lane free. |
 | `grass` | 0 | Ground strip | Speed falls to 72. |
+| `rumble` | 6px teeth | 12px tooth, partial lanes | Rear wheel bounces. Nose kicks up on the rise. Speed falls to 64. |
 | `cool` | 0 | Chevrons on the listed lanes | Heat to 0. Other lanes ignore it. |
-| `boost` | 0 | Hazard stripes | One second at 250, no heat. Ignored when the flag is off. |
+| `boost` | 0 | Hazard stripes, partial lanes | One second at 250, no heat. Ignored when the flag is off. |
 
 Course entries are `{type, x, lanes, size?, len?}`. Raised pieces take `len` from the profile. Strips set `len` themselves. Nothing crosses the `COURSE_LEN` seam. The first piece is past the run the turbo and overheat tests travel from a standing start.

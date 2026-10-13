@@ -28,6 +28,14 @@ the side, or off the side of one, tumbles. Partial raised pieces draw a side
 face. The course is a loop of these pieces. See `docs/track-pieces.md`.
 Shapes follow the nesmaps.com Excitebike sheet; the pixels are ours.
 
+The HUD speed is km/h (120 cruise, 180 turbo). The track moves at 1.5 pixels
+per km/h each second. Mud and boost never cover all four lanes, and mud is
+short. Grass or mud after a ramp sits in the landing and the bypass, so a
+jump clears it. Rumble strips are a run of small teeth that jolt and slow
+the bike. Holding the accelerator or turbo on a down-slope adds a slight
+speed bump that fades on the flat. Forward lean on flat ground keeps the
+front tire on the road.
+
 ## Layout
 
 - `Game.js` — pure rules/state (no Qt), also loaded by node tests
@@ -38,10 +46,10 @@ Shapes follow the nesmaps.com Excitebike sheet; the pixels are ours.
 
 ## Controls
 
-- `Space` / `Z` / `J`: throttle (hold). Top speed as tuned; heat slowly cools.
-- `Shift` / `K`: turbo (hold). Higher top speed, faster acceleration, heat rises.
+- `Space` / `Z` / `J`: throttle (hold). Top speed 120 km/h; heat slowly cools. A down-slope adds a little more while it is held.
+- `Shift` / `K`: turbo (hold). Top speed 180 km/h, faster acceleration, heat rises. Same downhill bump, still no extra heat.
 - `←` / `A`: lean back (wheelie, at speed); in the air, nose up
-- `→` / `D`: lean forward; in the air, nose down
+- `→` / `D`: lean forward. On flat ground the rear lifts so the front tire stays on the road. In the air, nose down.
 - `↑` `↓` / `W` `S`: change lane
 - `X` / `C`: crash (debug pose)
 - `Esc` or click outside: close

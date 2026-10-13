@@ -7,6 +7,10 @@
 // segment you touch, so a down-slope with a matching nose is clean.
 // Changing lanes into a face that is above the wheels, or off the side of
 // one, tumbles. Heights are in bike-heights of the 43px sprite.
+// Speed on the HUD is km/h. The track scrolls at WORLD_SCALE pixels per
+// (km/h · second). Holding throttle or turbo on a down-slope adds a small
+// temporary bump over that cap. On flat ground a forward lean lifts the
+// rear so the front tire stays on the road.
 // See docs/track-pieces.md.
 
 var TITLE = "Moto Hop"
@@ -35,10 +39,13 @@ var ENGINE = { x: 36, y: 24 }
 // One bike-height. Ramp peaks below are multiples of this.
 var BIKE_H = SPRITE.h
 
-// Tuning. Speeds are px/s on the logical view. Heat runs 0..HEAT_MAX.
+// Tuning. Speeds are displayed km/h. Heat runs 0..HEAT_MAX.
 // Pitch is degrees, negative = nose up (same sign as a wheelie).
+// WORLD_SCALE is pixels of track per (km/h · second). The HUD still shows
+// 120 and 180; the world just moves faster than one pixel per km/h.
 var MAX_SPEED = 120
 var TURBO_SPEED = 180
+var WORLD_SCALE = 1.5
 var ACCEL = 200
 var TURBO_ACCEL = 360
 var DECEL = 150
@@ -85,11 +92,22 @@ var BOOST_TIME = 1           // seconds at the raised cap
 var BOOST_SPEED = 250        // above TURBO_SPEED
 var BOOST_ACCEL = 700
 
-// Mud caps speed hard. Grass is a lighter drag. Both are ground strips.
+// Holding throttle or turbo on a down-slope adds this times sin(slope),
+// a slight bump over the normal cap that fades as soon as the hill ends.
+var DOWNHILL_BONUS = 36
+
+// Mud caps speed hard. Grass is a lighter drag. Rumble is a washboard:
+// speed falls between the two, and the rear wheel bounces over the teeth.
+// All three are ground strips. Mud and boost in COURSE never span every lane.
 var MUD_MAX = 40
 var MUD_DECEL = 520
 var GRASS_MAX = 72
-var GRASS_DECEL = 160
+var GRASS_DECEL = 420       // beats throttle and still slows turbo, gentler than mud
+var RUMBLE_MAX = 64
+var RUMBLE_DECEL = 460      // beats throttle and turbo; the teeth are the rest of the penalty
+var RUMBLE_TOOTH = 12        // px, one bump in the strip
+var RUMBLE_H = 6             // px, crest height
+var RUMBLE_TILT = 10         // nose-up jolt on the rising face
 
 // Camera keeps the bike sprite and the tallest lip already on screen under the HUD.
 var CAM_TOP = 28
@@ -162,35 +180,47 @@ var BUMP_SPEC = {
 
 // Looping test track. Raised pieces take their length from the profile.
 // Strips are {type, x, len, lanes}. Keep x >= 0 and x + len <= COURSE_LEN.
-// The first feature sits past the turbo/heat standing run (~620px).
-// Lips have flat after them so a test launch lands before the next piece
-// (a large ramp at speed 160 flies about 180px past the lip). The full-width
-// boost has a long flat after it: that test rolls about 520px from the strip.
-var COURSE_LEN = 10400
+// The first feature sits past the standing turbo run. World motion is
+// WORLD_SCALE px per km/h, so that run is longer than the old 1:1 scroll
+// and still ends on the empty straight. Lips have flat after them so a
+// test launch lands before the next raised piece. The boost on lane 0 has
+// a long clear run after it: the boost test rolls on from the strip.
+// Mud and boost never list every lane — leave a line to steer.
+var COURSE_LEN = 10800
 var COURSE = [
-  // Short hop on the top pair (lanes 2–3 stay on the dirt), cool those, full-width gentle ramp, grass on the bottom.
-  { type: "ramp", size: "small", x: 1200, lanes: [0, 1] },
-  { type: "cool", x: 1500, len: 110, lanes: [0, 1] },
-  { type: "ramp", size: "medium", x: 1850, lanes: [0, 1, 2, 3] },
-  { type: "grass", x: 2250, len: 200, lanes: [2, 3] },
-  // Lane 0 stays down; the other three take the big ramp, then a boost straight.
-  { type: "ramp", size: "large", x: 2700, lanes: [1, 2, 3] },
-  { type: "boost", x: 3400, len: 180, lanes: [0, 1, 2, 3] },
-  // Full mud, then a split: grass on the top lanes, mud on the bottom.
-  { type: "mud", x: 4200, len: 260, lanes: [0, 1, 2, 3] },
-  { type: "grass", x: 4550, len: 110, lanes: [0, 1] },
-  { type: "mud", x: 4550, len: 110, lanes: [2, 3] },
-  // Steep face on the top, bumps to thread, a mound on the bottom.
-  { type: "ramp", size: "steep", x: 4900, lanes: [0, 1] },
-  { type: "bump", size: "small", x: 5200, lanes: [1, 2] },
-  { type: "bump", size: "tiny", x: 5480, lanes: [3] },
-  { type: "hump", size: "wide", x: 5750, lanes: [2, 3] },
-  // Long table leaves lane 3 open; giant leaves lane 0 so the loop stays skippable.
-  { type: "table", size: "long", x: 6350, lanes: [0, 1, 2] },
-  { type: "cool", x: 7050, len: 48, lanes: [1] },
-  { type: "double", size: "std", x: 7300, lanes: [0, 1] },
-  { type: "table", size: "giant", x: 8000, lanes: [1, 2, 3] },
-  { type: "boost", x: 9300, len: 64, lanes: [0] }
+  // Short hop. Grass on the bypass lanes; a short mud on the landing lanes
+  // that a full jump clears and a crawl lands in.
+  { type: "ramp", size: "small", x: 1400, lanes: [0, 1] },
+  { type: "grass", x: 1420, len: 72, lanes: [2, 3] },
+  { type: "mud", x: 1496, len: 56, lanes: [0, 1] },
+  { type: "cool", x: 1720, len: 96, lanes: [0, 1] },
+  // Full-width gentle ramp. Landing mud only on the lower pair.
+  { type: "ramp", size: "medium", x: 2100, lanes: [0, 1, 2, 3] },
+  { type: "mud", x: 2324, len: 64, lanes: [2, 3] },
+  { type: "grass", x: 2520, len: 96, lanes: [0, 1] },
+  // Lane 0 stays down. Landing mud on the ramp lanes, then a partial boost
+  // beside a rumble strip so the next straight is a choice.
+  { type: "ramp", size: "large", x: 2900, lanes: [1, 2, 3] },
+  { type: "grass", x: 2940, len: 88, lanes: [0] },
+  { type: "mud", x: 3164, len: 64, lanes: [1, 2, 3] },
+  { type: "boost", x: 3280, len: 80, lanes: [0, 1] },
+  { type: "rumble", x: 3360, len: 108, lanes: [2, 3] },
+  // Steep face, a landing mud the jump clears, bumps to thread, a mound.
+  { type: "ramp", size: "steep", x: 4600, lanes: [0, 1] },
+  { type: "grass", x: 4620, len: 80, lanes: [2, 3] },
+  { type: "mud", x: 4716, len: 56, lanes: [0, 1] },
+  { type: "bump", size: "small", x: 5160, lanes: [1, 2] },
+  { type: "bump", size: "tiny", x: 5400, lanes: [3] },
+  { type: "hump", size: "wide", x: 5580, lanes: [2, 3] },
+  // Long table leaves lane 3 open; giant leaves lane 0. A rumble on that
+  // bypass, then a one-lane boost with empty track after it.
+  { type: "table", size: "long", x: 6100, lanes: [0, 1, 2] },
+  { type: "cool", x: 6780, len: 48, lanes: [1] },
+  { type: "double", size: "std", x: 7100, lanes: [0, 1] },
+  { type: "table", size: "giant", x: 7900, lanes: [1, 2, 3] },
+  { type: "rumble", x: 8800, len: 132, lanes: [0, 1] },
+  { type: "mud", x: 9100, len: 72, lanes: [2, 3] },
+  { type: "boost", x: 9400, len: 56, lanes: [0] }
 ]
 
 function specFor(f) {
@@ -249,7 +279,7 @@ function initialState() {
     heat: 0, overheatT: 0, t: 0,
     smoke: [], smokeT: 0, puffN: 0,
     crashT: 0, crashY: null, laneFrom: 1, laneTo: 1, laneT: 0, changing: false,
-    air: false, height: 0, vy: 0, onPiece: null,
+    air: false, height: 0, vy: 0, onPiece: null, onRumble: false,
     boostT: 0, boostHeld: false,
     input: { up: false, down: false, left: false, right: false, throttle: false, turbo: false, crash: false },
     prevInput: { up: false, down: false, crash: false }
@@ -486,8 +516,44 @@ function clearAerial(s) {
   s.vy = 0
   s.height = 0
   s.onPiece = null
+  s.onRumble = false
   s.boostT = 0
   s.boostHeld = false
+}
+
+// How far the front tire's lowest point sits below the rear contact after a
+// nose-down rotation, in px. Zero when the bike is level. Positive means the
+// front wheel would enter the road if the rear contact stayed on the ground.
+function frontTireDrop(tiltDeg) {
+  var rad = tiltDeg * Math.PI / 180
+  var dx = SPRITE.frontHub.x - SPRITE.rearHub.x
+  var dy = SPRITE.frontHub.y - SPRITE.h
+  return dx * Math.sin(rad) + dy * Math.cos(rad) + SPRITE.wheelR
+}
+
+// Extra km/h on a down-slope. sin(slope) keeps a gentle face slight.
+function downhillBonus(slopeDeg) {
+  if (!slopeDeg || slopeDeg <= 0.5) return 0
+  return DOWNHILL_BONUS * Math.sin(slopeDeg * Math.PI / 180)
+}
+
+function downhillExtra(s, inp) {
+  if (s.air || s.boostT > 0) return 0
+  if (!inp.throttle && !inp.turbo) return 0
+  var ground = surfaceAt((s.scrollX || 0) + s.x, activeLane(s))
+  if (!ground || ground.kind !== "down") return 0
+  return downhillBonus(ground.slope)
+}
+
+// One tooth of a rumble strip. rel is px into the strip.
+function rumbleSample(rel) {
+  var tooth = RUMBLE_TOOTH
+  var u = rel % tooth
+  if (u < 0) u += tooth
+  var half = tooth / 2
+  var rising = u < half
+  var t = rising ? u / half : (tooth - u) / half
+  return { h: Math.round(t * RUMBLE_H), rising: rising }
 }
 
 function recover(s) {
@@ -549,8 +615,9 @@ function applyHeat(s, inp, dt) {
 }
 
 function applyThrottle(s, inp, dt) {
-  if (inp.turbo) s.speed = approach(s.speed, TURBO_SPEED, TURBO_ACCEL * dt)
-  else if (inp.throttle) s.speed = approach(s.speed, MAX_SPEED, ACCEL * dt)
+  var extra = downhillExtra(s, inp)
+  if (inp.turbo) s.speed = approach(s.speed, TURBO_SPEED + extra, TURBO_ACCEL * dt)
+  else if (inp.throttle) s.speed = approach(s.speed, MAX_SPEED + extra, ACCEL * dt)
   else s.speed = approach(s.speed, 0, DECEL * dt)
   applyHeat(s, inp, dt)
 }
@@ -562,6 +629,8 @@ function applyTerrain(s, dt) {
     if (s.speed > MUD_MAX) s.speed = Math.max(MUD_MAX, s.speed - MUD_DECEL * dt)
   } else if (stripAt(wx, lane, "grass")) {
     if (s.speed > GRASS_MAX) s.speed = Math.max(GRASS_MAX, s.speed - GRASS_DECEL * dt)
+  } else if (stripAt(wx, lane, "rumble")) {
+    if (s.speed > RUMBLE_MAX) s.speed = Math.max(RUMBLE_MAX, s.speed - RUMBLE_DECEL * dt)
   }
 }
 
@@ -639,6 +708,15 @@ function interactTrack(s, prevScroll, dt) {
   s.onPiece = null
   s.height = 0
   s.vy = 0
+  // Washboard under the rear wheel. Teeth are too low to launch; the pitch
+  // kicks nose-up on the way up and settles in the trough.
+  var rumble = stripAt(x1, lane, "rumble")
+  if (rumble) {
+    var sample = rumbleSample(localX(x1) - rumble.x)
+    s.onRumble = true
+    s.height = sample.h
+    s.tilt = (sample.rising && sample.h >= 2) ? -RUMBLE_TILT : 0
+  }
 }
 
 function applyStrips(s) {
@@ -655,6 +733,7 @@ function applyStrips(s) {
 
 function assignPhase(s) {
   if (s.air) s.phase = "air"
+  else if (s.onRumble) s.phase = "rumble"
   else if (s.onPiece != null && (s.height || 0) > 0.5) s.phase = "ramp"
   else if (s.laneT > 0) s.phase = "lane"
   else if (s.tilt < -5) s.phase = "wheelie"
@@ -671,6 +750,7 @@ function step(state, dt) {
   s.prevInput = { up: inp.up, down: inp.down, crash: inp.crash }
   s.t += dt
   s.changing = false
+  s.onRumble = false
 
   if (s.phase === "crash") {
     s.crashT += dt
@@ -719,7 +799,7 @@ function step(state, dt) {
   }
 
   var prevScroll = s.scrollX
-  s.scrollX += s.speed * dt
+  s.scrollX += s.speed * WORLD_SCALE * dt
 
   if (s.phase !== "crash" && s.phase !== "overheat") {
     interactTrack(s, prevScroll, dt)
@@ -734,7 +814,7 @@ function step(state, dt) {
   }
 
   updateSmoke(s, dt, s.phase === "overheat")
-  s.wheelAngle += s.speed * dt / SPRITE.wheelR
+  s.wheelAngle += s.speed * WORLD_SCALE * dt / SPRITE.wheelR
   return s
 }
 
@@ -750,7 +830,23 @@ function pose(s) {
              wheelAngle: s.wheelAngle, scrollX: s.scrollX }
   }
   var lift = s.height || 0
-  return { pivot: "rear", x: Math.round(s.x), y: Math.round(s.laneY - lift), angleDeg: s.tilt,
+  // Flat ground only. On a slope the rear contact is already on the face.
+  // Nose-down around that contact would bury the front tire, so the rear
+  // rises until the front tire is tangent to the road.
+  var drop = 0
+  if (!s.air && !s.onRumble && s.onPiece == null && lift <= 0.5 && s.tilt > 0) {
+    drop = frontTireDrop(s.tilt)
+    if (drop < 0) drop = 0
+  }
+  var y = Math.round(s.laneY - lift - drop)
+  if (drop > 0) {
+    var rad = s.tilt * Math.PI / 180
+    var dx = SPRITE.frontHub.x - SPRITE.rearHub.x
+    var dy = SPRITE.frontHub.y - SPRITE.h
+    var bottom = y + dx * Math.sin(rad) + dy * Math.cos(rad) + SPRITE.wheelR
+    if (bottom > s.laneY) y -= 1
+  }
+  return { pivot: "rear", x: Math.round(s.x), y: y, angleDeg: s.tilt,
            wheelAngle: s.wheelAngle, scrollX: s.scrollX }
 }
 
@@ -760,15 +856,20 @@ if (typeof module !== "undefined") {
     TRACK_TOP: TRACK_TOP, LANE_H: LANE_H, SPRITE: SPRITE, BIKE_H: BIKE_H, CRASH_TIME: CRASH_TIME,
     HEAT_MAX: HEAT_MAX, HEAT_YELLOW: HEAT_YELLOW, HEAT_RED: HEAT_RED, HEAT_FLASH: HEAT_FLASH,
     OVERHEAT_TIME: OVERHEAT_TIME, MAX_SPEED: MAX_SPEED, TURBO_SPEED: TURBO_SPEED,
+    WORLD_SCALE: WORLD_SCALE,
     AIR_COOL_RATE: AIR_COOL_RATE, GRAVITY: GRAVITY,
     LAND_CLEAN_TOL: LAND_CLEAN_TOL, LAND_OK_TOL: LAND_OK_TOL,
     LAND_NOSE_CRASH: LAND_NOSE_CRASH, LAND_REAR_CRASH: LAND_REAR_CRASH,
     LAND_SPEED_KEEP: LAND_SPEED_KEEP, PITCH_MIN: PITCH_MIN, WHEELIE_DEG: WHEELIE_DEG,
+    NOSE_DEG: NOSE_DEG,
     ENABLE_BOOST_STRIPS: ENABLE_BOOST_STRIPS, BOOST_TIME: BOOST_TIME, BOOST_SPEED: BOOST_SPEED,
+    DOWNHILL_BONUS: DOWNHILL_BONUS,
     MUD_MAX: MUD_MAX, GRASS_MAX: GRASS_MAX, SIDE_HIT: SIDE_HIT,
+    RUMBLE_MAX: RUMBLE_MAX, RUMBLE_TOOTH: RUMBLE_TOOTH, RUMBLE_H: RUMBLE_H, RUMBLE_TILT: RUMBLE_TILT,
     COURSE: COURSE, COURSE_LEN: COURSE_LEN, RAMP_SPEC: RAMP_SPEC,
     initialState: initialState, setInput: setInput, step: step, pose: pose, heatBand: heatBand,
     courseFeature: courseFeature, rampHeight: rampHeight, rampSlope: rampSlope,
-    surfaceAt: surfaceAt, cameraY: cameraY
+    surfaceAt: surfaceAt, cameraY: cameraY,
+    frontTireDrop: frontTireDrop, downhillBonus: downhillBonus, rumbleSample: rumbleSample
   }
 }
