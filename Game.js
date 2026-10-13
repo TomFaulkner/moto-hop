@@ -284,6 +284,7 @@ function initialState() {
     crashT: 0, crashY: null, laneFrom: 1, laneTo: 1, laneT: 0, changing: false,
     air: false, height: 0, vy: 0, onPiece: null, onRumble: false,
     boostT: 0, boostHeld: false,
+    lap: 1, lapTime: 0, lastLap: -1,
     input: { up: false, down: false, left: false, right: false, throttle: false, turbo: false, crash: false },
     prevInput: { up: false, down: false, crash: false }
   }
@@ -734,6 +735,40 @@ function applyStrips(s) {
   }
 }
 
+// m:ss.hh. A negative time is "no lap yet".
+function formatRaceTime(t) {
+  if (t == null || !(t >= 0) || t !== t) return "--:--.--"
+  var cs = Math.floor(t * 100 + 1e-4)
+  if (cs > 99 * 6000 + 5999) cs = 99 * 6000 + 5999
+  var m = Math.floor(cs / 6000)
+  var s = Math.floor(cs / 100) % 60
+  var f = cs % 100
+  function pad(n) { return (n < 10 ? "0" : "") + n }
+  return m + ":" + pad(s) + "." + pad(f)
+}
+
+// One count per forward crossing of course x = 0. Floor of world position
+// over the lap length, so sitting on the line, a crash slide, or the
+// idle reset after a crash cannot tick it again.
+function noteFinish(s, prevScroll, dt) {
+  var prev = prevScroll + s.x
+  var now = s.scrollX + s.x
+  if (!(now > prev)) return
+  var a = Math.floor(prev / COURSE_LEN)
+  var b = Math.floor(now / COURSE_LEN)
+  if (b <= a) return
+  var span = now - prev
+  var into = now - b * COURSE_LEN
+  var frac = span > 0 ? into / span : 1
+  if (frac < 0) frac = 0
+  if (frac > 1) frac = 1
+  var completed = s.lapTime - frac * dt
+  if (completed < 0) completed = 0
+  s.lastLap = completed
+  s.lapTime = frac * dt
+  s.lap += b - a
+}
+
 function assignPhase(s) {
   if (s.air) s.phase = "air"
   else if (s.onRumble) s.phase = "rumble"
@@ -803,6 +838,8 @@ function step(state, dt) {
 
   var prevScroll = s.scrollX
   s.scrollX += s.speed * WORLD_SCALE * dt
+  s.lapTime += dt
+  noteFinish(s, prevScroll, dt)
 
   if (s.phase !== "crash" && s.phase !== "overheat") {
     interactTrack(s, prevScroll, dt)
@@ -872,7 +909,7 @@ if (typeof module !== "undefined") {
     COURSE: COURSE, COURSE_LEN: COURSE_LEN, RAMP_SPEC: RAMP_SPEC,
     initialState: initialState, setInput: setInput, step: step, pose: pose, heatBand: heatBand,
     courseFeature: courseFeature, rampHeight: rampHeight, rampSlope: rampSlope,
-    surfaceAt: surfaceAt, cameraY: cameraY,
+    surfaceAt: surfaceAt, cameraY: cameraY, formatRaceTime: formatRaceTime,
     frontTireDrop: frontTireDrop, downhillBonus: downhillBonus, rumbleSample: rumbleSample
   }
 }

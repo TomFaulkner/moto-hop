@@ -36,8 +36,9 @@ off the side of a raised piece into a lane that does not have it, uses the
 same tumble as a bad landing. A lane change that finishes before the piece is
 clear, and a change along a piece that fills both lanes stays on the face.
 On the near edge, where the next lane does not have the piece, `Scene.qml`
-draws a dark side face under the riding surface. The drawn crust is one pixel
-into the tire so the wheel meets the dirt.
+draws a dark side band under the crust. The band follows the slope and ends
+at the toe, inside the piece, so it does not hang onto the track ahead of
+the slope. The drawn crust is one pixel into the tire so the wheel meets the dirt.
 
 Mud, grass, boost, and rumble are ground strips. A strip only covers the lanes
 in its `lanes` array. The course never puts mud or boost on every lane, and

@@ -129,21 +129,48 @@ Item {
       return "#8d5226"
     }
 
-    // One lane of a raised piece: side extrusion, then the riding surface, then a cliff face.
+    // Near-side shade. A band under the crust, same columns as the slope,
+    // clipped to the piece heel. It pinches off at the toe instead of a
+    // second profile shifted down onto the track ahead of the slope.
+    function drawSideBand(ctx, sx0, sp, base) {
+      if (!sp || sp.gap) return
+      var x0 = Math.floor(sx0 + sp.x0)
+      var x1 = Math.ceil(sx0 + sp.x1)
+      if (x1 < 0 || x0 >= Game.VIEW_W) return
+      var heel = Math.round(base) + 3
+      var depth = 6
+      var xStart = x0 < 0 ? 0 : x0
+      var xEnd = x1 > Game.VIEW_W ? Game.VIEW_W : x1
+      for (var x = xStart; x < xEnd; x++) {
+        var u = (x + 0.5 - (sx0 + sp.x0)) / sp.len
+        if (u < 0) u = 0
+        if (u > 1) u = 1
+        var h = sp.y0 + (sp.y1 - sp.y0) * u
+        if (h < 3) continue
+        var top = columnTop(base, h, 1)
+        var y0 = top + (sp.kind === "flat" ? 3 : 2)
+        var y1 = y0 + depth
+        if (y1 > heel) y1 = heel
+        if (y0 >= y1) continue
+        ctx.fillStyle = "#3a2212"
+        ctx.fillRect(x, y0, 1, y1 - y0)
+        ctx.fillStyle = "#1a100a"
+        ctx.fillRect(x, y0, 1, 1)
+      }
+    }
+
+    // One lane of a raised piece: riding surface, near-side band, cliff face.
     function drawRaisedLane(ctx, f, sx0, lane, cam) {
       var base = Game.LANE_Y[lane] + cam
       var spans = f.spans || []
       var nearOpen = !laneHas(f, lane + 1)
       var i
-      // Side face hangs toward the viewer when the next lane does not carry this piece.
-      if (nearOpen) {
-        for (i = 0; i < spans.length; i++) {
-          drawSpanColumns(ctx, sx0, spans[i], base + 8, 0, "#3a2212", "#1a100a")
-        }
-      }
       for (i = 0; i < spans.length; i++) {
         var sp = spans[i]
         drawSpanColumns(ctx, sx0, sp, base, 1, bodyOf(sp.kind), crustOf(sp.kind))
+      }
+      if (nearOpen) {
+        for (i = 0; i < spans.length; i++) drawSideBand(ctx, sx0, spans[i], base)
       }
       var end = null
       for (i = 0; i < spans.length; i++) if (!spans[i].gap) end = spans[i]
@@ -264,6 +291,28 @@ Item {
       }
     }
 
+    // Checkered banner on course x = 0, once per lap, across every lane.
+    function drawFinishLine(ctx, scroll, cam) {
+      var cycle = Game.COURSE_LEN
+      var n0 = Math.floor((scroll - 32) / cycle)
+      var n1 = Math.floor((scroll + Game.VIEW_W + 32) / cycle)
+      var y0 = Game.LANE_Y[0] - 14 + cam
+      var y1 = y0 + Game.LANES * Game.LANE_H
+      var cell = 8
+      var cols = 2
+      for (var n = n0; n <= n1; n++) {
+        var x = Math.round(n * cycle - scroll)
+        if (x > Game.VIEW_W || x + cols * cell < 0) continue
+        for (var col = 0; col < cols; col++) {
+          for (var y = y0; y < y1; y += cell) {
+            var on = ((col + ((y - y0) / cell)) & 1) === 0
+            ctx.fillStyle = on ? "#141414" : "#fcfcfc"
+            ctx.fillRect(x + col * cell, y, cell, Math.min(cell, y1 - y))
+          }
+        }
+      }
+    }
+
     function drawCourse(ctx, scroll, cam) {
       var course = Game.COURSE
       var cycle = Game.COURSE_LEN
@@ -334,6 +383,7 @@ Item {
       for (var mx = -(sx % 128) + 100; mx < W; mx += 128) ctx.fillRect(mx, Game.TRACK_TOP - 4 + cam, 3, 8)
 
       drawCourse(ctx, sx, cam)
+      drawFinishLine(ctx, sx, cam)
 
       // Shadow stays on the flat lane in the air and while tumbling.
       // On a ramp it sits under the raised contact point.
@@ -421,11 +471,23 @@ Item {
       color: "#fcfcfc"
       anchors.verticalCenter: parent.verticalCenter
     }
+    Text {
+      id: lapHud
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      font.family: "monospace"
+      font.bold: true
+      font.pixelSize: 8 * scene.pixelScale
+      color: "#fcfcfc"
+      text: "LAP " + (scene.game.lap > 0 ? scene.game.lap : 1)
+            + "  " + Game.formatRaceTime(scene.game.lapTime)
+            + "  LAST " + Game.formatRaceTime(scene.game.lastLap)
+    }
     Rectangle {
       id: tempTrack
       x: 30 * scene.pixelScale
       anchors.verticalCenter: parent.verticalCenter
-      width: parent.width - x
+      width: Math.max(48 * scene.pixelScale, parent.width - x - lapHud.width - 8 * scene.pixelScale)
       height: 7 * scene.pixelScale
       color: "#000000"
       border.color: "#fcfcfc"

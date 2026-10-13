@@ -25,7 +25,7 @@ including a down-slope whose pitch matches the bike. Big ramps are two to
 three-and-a-half bike-heights (the sprite is 43px). The camera lifts for tall
 lips. Mud and grass slow the bike. Changing lanes into a raised piece from
 the side, or off the side of one, tumbles. Partial raised pieces draw a side
-face. The course is a loop of these pieces. See `docs/track-pieces.md`.
+face. The course is a loop of these pieces. A checkered line marks the start of each lap, and the HUD shows the lap, the time on this lap, and the last lap time. See `docs/track-pieces.md`.
 Shapes follow the nesmaps.com Excitebike sheet; the pixels are ours.
 
 The HUD speed is km/h (120 cruise, 180 turbo). The track moves at 1.5 pixels

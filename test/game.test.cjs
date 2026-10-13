@@ -682,6 +682,104 @@ test("rumble jolts and slows, and an open lane misses it", () => {
   assert.notEqual(missed.phase, "rumble")
 })
 
+test("race time formats minutes, seconds, and a blank last lap", () => {
+  assert.equal(G.formatRaceTime(-1), "--:--.--")
+  assert.equal(G.formatRaceTime(0), "0:00.00")
+  assert.equal(G.formatRaceTime(65.432), "1:05.43")
+  assert.equal(G.formatRaceTime(12.3), "0:12.30")
+})
+
+test("lap starts at 1 and the clock runs before the line", () => {
+  const s0 = G.initialState()
+  assert.equal(s0.lap, 1)
+  assert.equal(s0.lapTime, 0)
+  assert.ok(s0.lastLap < 0)
+  const s = run(s0, 60, { throttle: true })
+  assert.equal(s.lap, 1)
+  assert.ok(Math.abs(s.lapTime - 1) < 0.02, "lapTime " + s.lapTime)
+  assert.ok(s.lastLap < 0)
+  assert.ok(s.scrollX + s.x < G.COURSE_LEN)
+})
+
+test("crossing the finish counts one lap and stores the time", () => {
+  let s = place(G.COURSE_LEN - 30, 120, 1)
+  s.lapTime = 40
+  let prev = s
+  let guard = 0
+  while (s.scrollX + s.x < G.COURSE_LEN) {
+    prev = s
+    s = run(s, 1, {})
+    guard++
+    assert.ok(guard < 40, "should reach the line")
+  }
+  assert.equal(prev.lap, 1)
+  assert.ok(prev.scrollX + prev.x < G.COURSE_LEN)
+  assert.equal(s.lap, 2)
+  // 40s already on the clock, plus the frames it took to reach the line.
+  assert.ok(Math.abs(s.lastLap + s.lapTime - (40 + guard / 60)) < 0.002, "split " + s.lastLap + " " + s.lapTime)
+  assert.ok(s.lastLap > 40 && s.lastLap < 40.3, "last " + s.lastLap)
+  assert.ok(s.lapTime >= 0 && s.lapTime < 1 / 60, "now " + s.lapTime)
+  const last = s.lastLap
+  s = run(s, 180, { throttle: true })
+  assert.equal(s.lap, 2, "still on the same lap")
+  assert.equal(s.lastLap, last)
+  assert.ok(s.scrollX + s.x < G.COURSE_LEN * 2)
+})
+
+test("a frame that jumps the line counts once", () => {
+  let s = place(G.COURSE_LEN - 1, G.TURBO_SPEED, 1)
+  s.lapTime = 5
+  s = run(s, 1, {})
+  assert.ok(s.scrollX + s.x > G.COURSE_LEN + 1)
+  assert.equal(s.lap, 2)
+  assert.ok(s.lastLap > 4.9 && s.lastLap < 5.02, "last " + s.lastLap)
+  assert.ok(s.lapTime >= 0 && s.lapTime < 1 / 60)
+  s = run(s, 30, { throttle: true })
+  assert.equal(s.lap, 2)
+})
+
+test("crawling across the line increments once", () => {
+  let s = place(G.COURSE_LEN - 3, 20, 0)
+  s.lapTime = 10
+  let saw = 0
+  for (let i = 0; i < 120; i++) {
+    const before = s.lap
+    s = run(s, 1, { throttle: true })
+    if (s.lap !== before) saw++
+  }
+  assert.equal(saw, 1)
+  assert.equal(s.lap, 2)
+  assert.ok(s.lastLap >= 10)
+})
+
+test("a crash that slides across the line counts once", () => {
+  let s = place(G.COURSE_LEN - 8, 100, 1)
+  s.lapTime = 20
+  s = run(s, 1, { crash: true })
+  assert.equal(s.phase, "crash")
+  s = run(s, Math.ceil(G.CRASH_TIME * 60) + 8, {})
+  assert.equal(s.phase, "idle")
+  assert.ok(s.scrollX + s.x > G.COURSE_LEN, "world " + (s.scrollX + s.x))
+  assert.equal(s.lap, 2)
+  assert.ok(s.lastLap > 19 && s.lastLap < 21, "last " + s.lastLap)
+  const last = s.lastLap
+  s = run(s, 30, {})
+  assert.equal(s.lap, 2)
+  assert.equal(s.lastLap, last)
+})
+
+test("a crash that stops short of the line does not count", () => {
+  let s = place(G.COURSE_LEN - 80, 40, 2)
+  s.lapTime = 7
+  s = run(s, 1, { crash: true })
+  s = run(s, Math.ceil(G.CRASH_TIME * 60) + 5, {})
+  assert.equal(s.phase, "idle")
+  assert.equal(s.speed, 0)
+  assert.ok(s.scrollX + s.x < G.COURSE_LEN, "world " + (s.scrollX + s.x))
+  assert.equal(s.lap, 1)
+  assert.ok(s.lastLap < 0)
+})
+
 test("surface patches never overlap raised pieces in any lane across laps", () => {
   const PATCH = ["grass", "mud", "boost", "rumble", "cool"]
   const items = []
