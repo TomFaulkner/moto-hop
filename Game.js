@@ -10,7 +10,9 @@
 // See docs/track-pieces.md.
 
 var TITLE = "Moto Hop"
-var VIEW_W = 256
+// Wider than NES so more of the course is on screen. Overlay and preview
+// integer-scale this canvas (nearest-neighbor) so pixels stay crisp.
+var VIEW_W = 384
 var VIEW_H = 224
 var LANES = 4
 var TRACK_TOP = 118
@@ -33,7 +35,7 @@ var ENGINE = { x: 36, y: 24 }
 // One bike-height. Ramp peaks below are multiples of this.
 var BIKE_H = SPRITE.h
 
-// Tuning. Speeds are px/s on the 256-wide logical view. Heat runs 0..HEAT_MAX.
+// Tuning. Speeds are px/s on the logical view. Heat runs 0..HEAT_MAX.
 // Pitch is degrees, negative = nose up (same sign as a wheelie).
 var MAX_SPEED = 120
 var TURBO_SPEED = 180
@@ -66,8 +68,9 @@ var PITCH_MIN = -55          // nose-up clamp (steep lips launch past the old -5
 var PITCH_MAX = 50           // nose-down clamp (down-slopes land around +35)
 var AIR_COOL_RATE = 8        // heat per second while airborne (slow cool)
 var LAND_CLEAN_TOL = 8       // |pitch - slope| at or under this lands clean
-var LAND_OK_TOL = 16         // within this: survive with a speed penalty
+var LAND_OK_TOL = 16         // on a slope, within this: survive with a speed penalty
 var LAND_NOSE_CRASH = 12     // nose-down past this (pitch - slope) crashes
+var LAND_REAR_CRASH = 50     // on flat, nose-up past this is over-tilted and crashes
 var LAND_SPEED_KEEP = 0.62   // speed kept on an off-angle but survivable landing
 var LAUNCH_H = 4             // leaving a surface taller than this is a lip, not a roll-off
 // vy += kick * speed/MAX_SPEED  +  speed * sin(|slope|) * SLOPE_LAUNCH
@@ -165,11 +168,11 @@ var BUMP_SPEC = {
 // boost has a long flat after it: that test rolls about 520px from the strip.
 var COURSE_LEN = 10400
 var COURSE = [
-  // Short hop, cool the top lanes, gentle ramp, then grass.
-  { type: "ramp", size: "small", x: 1200, lanes: [0, 1, 2, 3] },
+  // Short hop on the top pair (lanes 2–3 stay on the dirt), cool those, full-width gentle ramp, grass on the bottom.
+  { type: "ramp", size: "small", x: 1200, lanes: [0, 1] },
   { type: "cool", x: 1500, len: 110, lanes: [0, 1] },
   { type: "ramp", size: "medium", x: 1850, lanes: [0, 1, 2, 3] },
-  { type: "grass", x: 2250, len: 200, lanes: [0, 1, 2, 3] },
+  { type: "grass", x: 2250, len: 200, lanes: [2, 3] },
   // Lane 0 stays down; the other three take the big ramp, then a boost straight.
   { type: "ramp", size: "large", x: 2700, lanes: [1, 2, 3] },
   { type: "boost", x: 3400, len: 180, lanes: [0, 1, 2, 3] },
@@ -177,15 +180,16 @@ var COURSE = [
   { type: "mud", x: 4200, len: 260, lanes: [0, 1, 2, 3] },
   { type: "grass", x: 4550, len: 110, lanes: [0, 1] },
   { type: "mud", x: 4550, len: 110, lanes: [2, 3] },
-  // Steep face on the top, bumps to thread, a mound, the long table.
+  // Steep face on the top, bumps to thread, a mound on the bottom.
   { type: "ramp", size: "steep", x: 4900, lanes: [0, 1] },
   { type: "bump", size: "small", x: 5200, lanes: [1, 2] },
   { type: "bump", size: "tiny", x: 5480, lanes: [3] },
-  { type: "hump", size: "wide", x: 5750, lanes: [0, 1, 2, 3] },
-  { type: "table", size: "long", x: 6350, lanes: [0, 1, 2, 3] },
+  { type: "hump", size: "wide", x: 5750, lanes: [2, 3] },
+  // Long table leaves lane 3 open; giant leaves lane 0 so the loop stays skippable.
+  { type: "table", size: "long", x: 6350, lanes: [0, 1, 2] },
   { type: "cool", x: 7050, len: 48, lanes: [1] },
-  { type: "double", size: "std", x: 7300, lanes: [0, 1, 2, 3] },
-  { type: "table", size: "giant", x: 8000, lanes: [0, 1, 2, 3] },
+  { type: "double", size: "std", x: 7300, lanes: [0, 1] },
+  { type: "table", size: "giant", x: 8000, lanes: [1, 2, 3] },
   { type: "boost", x: 9300, len: 64, lanes: [0] }
 ]
 
@@ -582,9 +586,13 @@ function land(s, ground) {
   s.air = false
   s.height = ground ? ground.height : 0
   s.onPiece = ground ? ground.index : null
-  // Nose-down is stricter than a mirrored wheelie: too steep crashes
-  // even when the absolute error is still inside LAND_OK_TOL.
-  if (noseDown > LAND_NOSE_CRASH || diff > LAND_OK_TOL) {
+  // Flat: rear-wheel (nose-up) is safe unless over-rotated. Nose-down still
+  // crashes. On a slope the pitch has to match; a miss tumbles.
+  var flat = !ground || Math.abs(slope) < 1
+  var crash = noseDown > LAND_NOSE_CRASH
+  if (flat) crash = crash || -s.tilt > LAND_REAR_CRASH
+  else crash = crash || diff > LAND_OK_TOL
+  if (crash) {
     beginCrash(s)
     return
   }
@@ -754,7 +762,8 @@ if (typeof module !== "undefined") {
     OVERHEAT_TIME: OVERHEAT_TIME, MAX_SPEED: MAX_SPEED, TURBO_SPEED: TURBO_SPEED,
     AIR_COOL_RATE: AIR_COOL_RATE, GRAVITY: GRAVITY,
     LAND_CLEAN_TOL: LAND_CLEAN_TOL, LAND_OK_TOL: LAND_OK_TOL,
-    LAND_NOSE_CRASH: LAND_NOSE_CRASH, LAND_SPEED_KEEP: LAND_SPEED_KEEP,
+    LAND_NOSE_CRASH: LAND_NOSE_CRASH, LAND_REAR_CRASH: LAND_REAR_CRASH,
+    LAND_SPEED_KEEP: LAND_SPEED_KEEP, PITCH_MIN: PITCH_MIN, WHEELIE_DEG: WHEELIE_DEG,
     ENABLE_BOOST_STRIPS: ENABLE_BOOST_STRIPS, BOOST_TIME: BOOST_TIME, BOOST_SPEED: BOOST_SPEED,
     MUD_MAX: MUD_MAX, GRASS_MAX: GRASS_MAX, SIDE_HIT: SIDE_HIT,
     COURSE: COURSE, COURSE_LEN: COURSE_LEN, RAMP_SPEC: RAMP_SPEC,

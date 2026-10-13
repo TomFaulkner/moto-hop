@@ -314,7 +314,7 @@ test("down-slope landing with a matched pitch is clean", () => {
   const lip = jump.spans[0].x1
   const down = [...jump.spans].reverse().find((sp) => sp.kind === "down" && sp.y0 > 40)
   assert.ok(down, "double needs a tall down-slope")
-  let s = place(jump.x + lip - 30, 140, 0)
+  let s = place(jump.x + lip - 30, 140, jump.lanes[0])
   let guard = 0
   while (!s.air && guard < 80) {
     s = run(s, 1, { throttle: true })
@@ -380,4 +380,84 @@ test("changing lanes off the side of a raised piece crashes", () => {
   s = run(s, 1, { up: true })
   s = run(s, 8, {})
   assert.equal(s.phase, "crash")
+})
+
+function landWithTilt(size, speed, tilt) {
+  let s = flyOff(size, speed)
+  s.tilt = tilt
+  let guard = 0
+  while (s.air && guard < 500) {
+    s = run(s, 1, {})
+    guard++
+  }
+  return s
+}
+
+test("rear-wheel landing on flat survives", () => {
+  const s = landWithTilt("large", 120, G.WHEELIE_DEG)
+  assert.equal(s.air, false)
+  assert.notEqual(s.phase, "crash")
+  assert.ok(s.speed > 0)
+})
+
+test("small-ramp rear-wheel landing on flat survives", () => {
+  let s = flyOff("small", 100)
+  assert.ok(s.tilt < -20, "launch tilt " + s.tilt)
+  let guard = 0
+  while (s.air && guard < 500) {
+    s = run(s, 1, {})
+    guard++
+  }
+  assert.equal(s.air, false)
+  assert.notEqual(s.phase, "crash")
+})
+
+test("excessive rear tilt on flat crashes", () => {
+  const s = landWithTilt("large", 140, G.PITCH_MIN)
+  assert.equal(s.phase, "crash")
+  assert.ok(-G.PITCH_MIN > G.LAND_REAR_CRASH)
+})
+
+test("rear-wheel landing on a down-slope crashes", () => {
+  const jump = feature("double", "std")
+  const lip = jump.spans[0].x1
+  const down = [...jump.spans].reverse().find((sp) => sp.kind === "down" && sp.y0 > 40)
+  assert.ok(down, "double needs a tall down-slope")
+  let s = place(jump.x + lip - 30, 140, jump.lanes[0])
+  let guard = 0
+  while (!s.air && guard < 80) {
+    s = run(s, 1, { throttle: true })
+    guard++
+  }
+  assert.equal(s.air, true, "expected to leave the double's lip")
+  s.tilt = G.WHEELIE_DEG
+  guard = 0
+  while (s.air && guard < 500) {
+    s = run(s, 1, {})
+    guard++
+  }
+  assert.equal(s.phase, "crash")
+})
+
+test("raised pieces mostly leave a lane open", () => {
+  const raised = G.COURSE.filter((f) => f.spans && f.spans.length)
+  const partial = raised.filter((f) => f.lanes.length < G.LANES)
+  assert.ok(partial.length >= raised.length / 2, "partial " + partial.length + "/" + raised.length)
+  const hits = [0, 0, 0, 0]
+  for (const f of raised) for (const lane of f.lanes) hits[lane]++
+  for (let i = 0; i < G.LANES; i++) {
+    assert.ok(hits[i] < raised.length, "lane " + i + " is on every raised piece")
+  }
+})
+
+test("open lane skips the giant table", () => {
+  const giant = feature("table", "giant")
+  assert.ok(giant.lanes.length < G.LANES)
+  const open = [0, 1, 2, 3].find((l) => giant.lanes.indexOf(l) < 0)
+  assert.ok(open != null)
+  let s = place(giant.x - 4, 90, open)
+  s = run(s, 50, { throttle: true })
+  assert.equal(s.air, false)
+  assert.ok(!s.height)
+  assert.notEqual(s.phase, "crash")
 })

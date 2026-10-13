@@ -31,7 +31,7 @@ Shapes follow the nesmaps.com Excitebike sheet; the pixels are ours.
 ## Layout
 
 - `Game.js` — pure rules/state (no Qt), also loaded by node tests
-- `Scene.qml` — pure QtQuick drawing; 256×224 logical canvas, integer-scaled, nearest filtering
+- `Scene.qml` — pure QtQuick drawing; 384×224 logical canvas, integer-scaled, nearest filtering
 - `MotoHop.qml` — Quickshell overlay (PanelWindow, keys, 60 Hz tick)
 - `BarWidget.qml`, `manifest.json` — Omarchy plugin glue
 - `tools/shoot.py`, `tools/preview.qml` — headless screenshots

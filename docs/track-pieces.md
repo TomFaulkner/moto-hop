@@ -22,11 +22,13 @@ piece's `x` and each segment is one of:
 The rear wheel sticks to the segment under it, on an up-slope, a plateau, or a
 down-slope. Pitch is the segment slope, so the tire sits on the face. Landing
 compares pitch to that slope: within 8° is clean, within 16° keeps 62% of
-speed, and a nose-down miss past 12° uses the existing tumble. A down-slope
-whose pitch matches the bike is a clean landing. A span that ends above the
-ground is a cliff lip; crossing it launches. Vertical speed is the piece's
-kick scaled by `speed / MAX_SPEED`, plus a term from the lip angle, so a taller
-lip and a faster run both stay up longer.
+speed. Nose-down past 12° from the slope tumbles. On flat ground a rear-wheel
+landing is safe unless the bike is over-rotated past 50° nose-up; a mismatched
+pitch on a slope still tumbles. A down-slope whose pitch matches the bike is a
+clean landing. A span that ends above the ground is a cliff lip; crossing it
+launches. Vertical speed is the piece's kick scaled by `speed / MAX_SPEED`,
+plus a term from the lip angle, so a taller lip and a faster run both stay up
+longer.
 
 A piece only fills the lanes in its `lanes` array. Changing lanes into a lane
 whose surface at the bike's x is more than a few pixels above the wheels, or
@@ -39,7 +41,7 @@ into the tire so the wheel meets the dirt.
 
 `cameraY` drops the horizon when the bike or a lip already on screen would
 pass under the HUD, so a 3.5-bike table and the air above it stay in the
-256×224 view.
+384×224 view.
 
 ## NES pieces
 
@@ -70,7 +72,7 @@ Heights are the peak above the lane. Angles are the face angle.
 
 | Entry | Peak | Profile | Gameplay |
 | --- | --- | --- | --- |
-| `ramp` `small` | 43px, 1.0 bike | Up 72px (31°), cliff | Short jump. Nose has to come down to land. |
+| `ramp` `small` | 43px, 1.0 bike | Up 72px (31°), cliff | Short jump. Rear-wheel landing on the flat is safe. |
 | `ramp` `medium` | 50px, 1.2 bikes | Up 200px (14°), cliff | Untouched landing on flat is a speed penalty, not a crash. |
 | `ramp` `large` | 86px, 2.0 bikes | Up 210px (22°), plateau 28px, cliff | Big air. The short top launches level. |
 | `ramp` `steep` | 86px, 2.0 bikes | Up 92px (43°), cliff | Tall and short. Partial lanes, side face drawn. |
