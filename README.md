@@ -64,6 +64,6 @@ QT_QPA_PLATFORM=offscreen python tools/shoot.py screens   # needs PySide6 6.x
 
 `shoot.py` renders `Scene.qml` (the same file the plugin uses) offscreen and
 writes `idle`, `riding`, `wheelie`, `lane`, `crash`, `crashed`, `turbo`, `overheat`,
-`ramp-up`, `airborne`, `cool-arrow`, `boost`, `land-crash` PNGs.
+`ramp-up`, `airborne`, `cool-arrow`, `boost`, `land-crash`, `wide-partial` PNGs.
 
 See `CREDITS.md` for asset sources and licenses.

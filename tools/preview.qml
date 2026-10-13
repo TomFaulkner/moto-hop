@@ -92,6 +92,11 @@ Window {
       var giant = course("table", "giant")
       s = place(s, 1, giant.x + giant.peakAt - 20, 70)
       s = play(s, 1, { throttle: true })
+    } else if (name === "wide-partial") {
+      // Wider 384px view: steep on lanes 0–1, bump on 1–2 ahead, bike in an open lane.
+      var steep = course("ramp", "steep")
+      s = place(s, 3, steep.x + 40, 80)
+      s = play(s, 1, { throttle: true })
     } else if (name === "bump") {
       var bump = course("bump", "small")
       s = place(s, bump.lanes[0], bump.x + 36, 40)

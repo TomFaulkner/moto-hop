@@ -14,7 +14,8 @@ out = Path(sys.argv[1] if len(sys.argv) > 1 else root / "screens").resolve()
 out.mkdir(parents=True, exist_ok=True)
 SCENES = ["idle", "riding", "wheelie", "lane", "crash", "crashed", "turbo", "overheat",
           "ramp-up", "airborne", "cool-arrow", "boost", "land-crash",
-          "big-ramp", "airborne-big", "side-crash", "pieces-overview", "mud", "giant"]
+          "big-ramp", "airborne-big", "side-crash", "pieces-overview", "mud", "giant",
+          "wide-partial"]
 
 app = QGuiApplication(sys.argv)
 eng = QQmlApplicationEngine()
