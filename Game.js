@@ -67,6 +67,12 @@ var NOSE_DEG = 12
 var TILT_RATE = 120
 var LANE_TIME = 0.25
 var CRASH_TIME = 1.5
+var CPU_COUNT = 3
+var CPU_LOOKAHEAD = 90
+var CPU_RIDER_GAP = 40
+var CPU_REAR_OVERLAP = 10
+var CPU_RUBBERBAND = 10
+var CPU_RECOVER_GRACE = 0.35
 
 // Air and ramps. Uphill slopes are negative so they share the wheelie sign.
 var GRAVITY = 500            // px/s^2. Big lips stay up longer because they start high.
@@ -275,12 +281,31 @@ function bakeCourse() {
 
 bakeCourse()
 
-function initialState() {
+function makeCpu(id) {
+  var lane = [0, 2, 3, 1][id]
+  var cruise = [100, 108, 114, 106][id]
+  var start = [340, 430, 270, 520][id]
+  return {
+    id: id, lane: lane, laneY: LANE_Y[lane], worldX: start,
+    speed: 0, targetSpeed: cruise,
+    height: 0, vy: 0, air: false, tilt: 0,
+    phase: "riding", crashT: 0, contactT: 0,
+    laneFrom: lane, laneTo: lane, laneT: 0, changing: false,
+    palette: id, mudSkill: [0.9, 0.15, 0.75, 0.55][id],
+    onPiece: null, onRumble: false, boostT: 0, boostHeld: false
+  }
+}
+
+function initialState(cpuCount) {
+  var count = cpuCount == null ? CPU_COUNT : Math.floor(cpuCount)
+  count = Math.max(2, Math.min(4, count))
+  var cpus = []
+  for (var i = 0; i < count; i++) cpus.push(makeCpu(i))
   return {
     phase: "idle", lane: 1, laneY: LANE_Y[1], x: 64,
     speed: 0, scrollX: 0, wheelAngle: 0, tilt: 0,
-    heat: 0, overheatT: 0, t: 0,
-    smoke: [], smokeT: 0, puffN: 0,
+    heat: 0, overheatT: 0, t: 0, raceStarted: false,
+    smoke: [], smokeT: 0, puffN: 0, cpus: cpus,
     crashT: 0, crashY: null, laneFrom: 1, laneTo: 1, laneT: 0, changing: false,
     air: false, height: 0, vy: 0, onPiece: null, onRumble: false,
     boostT: 0, boostHeld: false,
@@ -297,6 +322,13 @@ function clone(s) {
   for (var a in s.input) n.input[a] = s.input[a]
   n.prevInput = {}
   for (var b in s.prevInput) n.prevInput[b] = s.prevInput[b]
+  n.cpus = []
+  var cpus = s.cpus || []
+  for (var c = 0; c < cpus.length; c++) {
+    var cpu = {}
+    for (var key in cpus[c]) cpu[key] = cpus[c][key]
+    n.cpus.push(cpu)
+  }
   n.smoke = []
   var sm = s.smoke || []
   for (var i = 0; i < sm.length; i++) {
@@ -626,9 +658,8 @@ function applyThrottle(s, inp, dt) {
   applyHeat(s, inp, dt)
 }
 
-function applyTerrain(s, dt) {
+function applyTerrainAt(s, wx, dt) {
   var lane = activeLane(s)
-  var wx = s.scrollX + s.x
   if (stripAt(wx, lane, "mud")) {
     if (s.speed > MUD_MAX) s.speed = Math.max(MUD_MAX, s.speed - MUD_DECEL * dt)
   } else if (stripAt(wx, lane, "grass")) {
@@ -636,6 +667,10 @@ function applyTerrain(s, dt) {
   } else if (stripAt(wx, lane, "rumble")) {
     if (s.speed > RUMBLE_MAX) s.speed = Math.max(RUMBLE_MAX, s.speed - RUMBLE_DECEL * dt)
   }
+}
+
+function applyTerrain(s, dt) {
+  applyTerrainAt(s, s.scrollX + s.x, dt)
 }
 
 function launch(s, feature, height, slope) {
@@ -651,7 +686,7 @@ function launch(s, feature, height, slope) {
   s.vy = vy
 }
 
-function land(s, ground) {
+function land(s, ground, noCrash) {
   var slope = ground ? ground.slope : 0
   var diff = Math.abs(s.tilt - slope)
   var noseDown = s.tilt - slope
@@ -665,7 +700,7 @@ function land(s, ground) {
   var crash = noseDown > LAND_NOSE_CRASH
   if (flat) crash = crash || -s.tilt > LAND_REAR_CRASH
   else crash = crash || diff > LAND_OK_TOL
-  if (crash) {
+  if (crash && !noCrash) {
     beginCrash(s)
     return
   }
@@ -673,20 +708,18 @@ function land(s, ground) {
   s.tilt = slope
 }
 
-function interactTrack(s, prevScroll, dt) {
+function interactTrackWorld(s, x0, x1, dt, noCrash) {
   var lane = activeLane(s)
-  var x0 = prevScroll + s.x
-  var x1 = s.scrollX + s.x
 
   // Before the new lane's surface can catch the wheels.
-  if (checkSide(s, x1)) return
+  if (!noCrash && checkSide(s, x1)) return
 
   if (s.air) {
     s.vy -= GRAVITY * dt
     s.height += s.vy * dt
     var under = surfaceAt(x1, lane)
     var floorH = under ? under.height : 0
-    if (s.vy <= 0 && s.height <= floorH) land(s, under)
+    if (s.vy <= 0 && s.height <= floorH) land(s, under, noCrash)
     return
   }
 
@@ -723,16 +756,166 @@ function interactTrack(s, prevScroll, dt) {
   }
 }
 
-function applyStrips(s) {
-  var lane = activeLane(s)
-  var wx = s.scrollX + s.x
-  if (stripAt(wx, lane, "cool")) s.heat = 0
-  if (ENABLE_BOOST_STRIPS && stripAt(wx, lane, "boost")) {
+function interactTrack(s, prevScroll, dt) {
+  interactTrackWorld(s, prevScroll + s.x, s.scrollX + s.x, dt, false)
+}
+
+function applyBoostAt(s, wx) {
+  if (ENABLE_BOOST_STRIPS && stripAt(wx, activeLane(s), "boost")) {
     if (!s.boostHeld) s.boostT = BOOST_TIME
     s.boostHeld = true
   } else {
     s.boostHeld = false
   }
+}
+
+function applyStrips(s) {
+  var lane = activeLane(s)
+  var wx = s.scrollX + s.x
+  if (stripAt(wx, lane, "cool")) s.heat = 0
+  applyBoostAt(s, wx)
+}
+
+function cpuCruiseTarget(s, cpu) {
+  var target = cpu.targetSpeed
+  var gap = cpu.worldX - (s.scrollX + s.x)
+  if (gap < -VIEW_W * 1.5) target = Math.min(MAX_SPEED - 2, target + CPU_RUBBERBAND)
+  else if (gap > VIEW_W * 1.5) target = Math.max(60, target - CPU_RUBBERBAND)
+  return target
+}
+
+function cpuHazardAt(cpu, world, lane) {
+  if (cpu.mudSkill >= 0.5 && stripAt(world, lane, "mud")) return true
+  if (cpu.mudSkill >= 0.75 && stripAt(world, lane, "grass")) return true
+  return false
+}
+
+// Do not start a merge that would put either wheel over a tall side edge
+// during the lane change. Riding straight up a ramp is not a hazard.
+function cpuSideHazard(cpu, to) {
+  var from = activeLane(cpu)
+  for (var d = 0; d <= CPU_LOOKAHEAD; d += 30) {
+    var a = surfaceAt(cpu.worldX + d, from)
+    var b = surfaceAt(cpu.worldX + d, to)
+    var ah = a ? a.height : 0
+    var bh = b ? b.height : 0
+    if (Math.abs(ah - bh) > SIDE_HIT) return true
+  }
+  return false
+}
+
+function cpuLaneOccupied(s, cpu, to) {
+  var y = LANE_Y[to]
+  var playerX = s.scrollX + s.x
+  if (Math.abs(s.laneY - y) < LANE_H * 0.6 && Math.abs(playerX - cpu.worldX) < CPU_RIDER_GAP) return true
+  for (var i = 0; i < s.cpus.length; i++) {
+    var other = s.cpus[i]
+    if (other.id === cpu.id) continue
+    if (Math.abs(other.laneY - y) < LANE_H * 0.6 && Math.abs(other.worldX - cpu.worldX) < CPU_RIDER_GAP) return true
+  }
+  return false
+}
+
+function chooseCpuLane(s, cpu) {
+  if (cpu.air || cpu.laneT > 0) return -1
+  var lane = activeLane(cpu)
+  var ahead = cpu.worldX + CPU_LOOKAHEAD
+  if (!cpuHazardAt(cpu, ahead, lane)) return -1
+  var first = cpu.id % 2 === 0 ? -1 : 1
+  var dirs = [first, -first]
+  for (var i = 0; i < dirs.length; i++) {
+    var to = lane + dirs[i]
+    if (to < 0 || to >= LANES) continue
+    if (cpuHazardAt(cpu, ahead, to)) continue
+    if (cpuSideHazard(cpu, to)) continue
+    if (cpuLaneOccupied(s, cpu, to)) continue
+    return to
+  }
+  return -1
+}
+
+function beginCpuCrash(cpu) {
+  cpu.phase = "crashed"
+  cpu.crashT = 0
+  cpu.speed = 0
+  cpu.laneT = 0
+  cpu.changing = false
+  cpu.lane = cpu.laneTo
+  cpu.laneFrom = cpu.lane
+  cpu.laneY = LANE_Y[cpu.lane]
+  cpu.tilt = 0
+  clearAerial(cpu)
+}
+
+function updateCpu(s, cpu, dt) {
+  cpu.changing = false
+  cpu.onRumble = false
+  if (cpu.phase === "crashed") {
+    cpu.speed = 0
+    cpu.crashT += dt
+    if (cpu.crashT >= CRASH_TIME) {
+      cpu.phase = "riding"
+      cpu.crashT = 0
+      cpu.contactT = CPU_RECOVER_GRACE
+      cpu.tilt = 0
+    }
+    return
+  }
+
+  cpu.contactT = Math.max(0, cpu.contactT - dt)
+  if (!cpu.air) {
+    if (cpu.laneT > 0) {
+      advanceLane(cpu, dt, false, false, false)
+    } else {
+      var to = chooseCpuLane(s, cpu)
+      if (to >= 0) {
+        cpu.laneFrom = cpu.lane
+        cpu.laneTo = to
+        cpu.laneT = LANE_TIME
+        cpu.changing = true
+      }
+    }
+    cpu.tilt = approach(cpu.tilt, 0, TILT_RATE * dt)
+    if (cpu.boostT > 0) {
+      cpu.boostT = Math.max(0, cpu.boostT - dt)
+      cpu.speed = approach(cpu.speed, BOOST_SPEED, BOOST_ACCEL * dt)
+    } else {
+      cpu.speed = approach(cpu.speed, cpuCruiseTarget(s, cpu), ACCEL * dt)
+    }
+  }
+
+  var prevWorld = cpu.worldX
+  cpu.worldX += cpu.speed * WORLD_SCALE * dt
+  interactTrackWorld(cpu, prevWorld, cpu.worldX, dt, true)
+  if (!cpu.air) {
+    applyBoostAt(cpu, cpu.worldX)
+    applyTerrainAt(cpu, cpu.worldX, dt)
+  }
+}
+
+function checkRiderCollisions(s) {
+  if (s.phase === "crash" || s.phase === "overheat") return
+  var playerX = s.scrollX + s.x
+  var front = SPRITE.frontHub.x - SPRITE.rearHub.x
+  for (var i = 0; i < s.cpus.length; i++) {
+    var cpu = s.cpus[i]
+    if (cpu.phase !== "riding") continue
+    if (Math.abs(s.laneY - cpu.laneY) >= LANE_H * 0.6) continue
+    if (Math.abs((s.height || 0) - (cpu.height || 0)) >= 10) continue
+    var behindCpu = cpu.worldX - (playerX + front)
+    if (behindCpu >= 0 && behindCpu <= CPU_REAR_OVERLAP && s.speed > cpu.speed) {
+      beginCrash(s)
+      return
+    }
+    var behindPlayer = playerX - (cpu.worldX + front)
+    if (behindPlayer >= 0 && behindPlayer <= CPU_REAR_OVERLAP && cpu.speed > s.speed && cpu.contactT <= 0) beginCpuCrash(cpu)
+  }
+}
+
+function updateCpus(s, dt) {
+  if (!s.raceStarted) return
+  for (var i = 0; i < s.cpus.length; i++) updateCpu(s, s.cpus[i], dt)
+  checkRiderCollisions(s)
 }
 
 // m:ss.hh. A negative time is "no lap yet".
@@ -787,6 +970,7 @@ function step(state, dt) {
   var pressedCrash = inp.crash && !s.prevInput.crash
   s.prevInput = { up: inp.up, down: inp.down, crash: inp.crash }
   s.t += dt
+  if (inp.throttle || inp.turbo || s.speed > 0 || s.scrollX > 0) s.raceStarted = true
   s.changing = false
   s.onRumble = false
 
@@ -853,6 +1037,7 @@ function step(state, dt) {
     }
   }
 
+  updateCpus(s, dt)
   updateSmoke(s, dt, s.phase === "overheat")
   s.wheelAngle += s.speed * WORLD_SCALE * dt / SPRITE.wheelR
   return s
@@ -894,6 +1079,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     TITLE: TITLE, VIEW_W: VIEW_W, VIEW_H: VIEW_H, LANES: LANES, LANE_Y: LANE_Y,
     TRACK_TOP: TRACK_TOP, LANE_H: LANE_H, SPRITE: SPRITE, BIKE_H: BIKE_H, CRASH_TIME: CRASH_TIME,
+    CPU_COUNT: CPU_COUNT, LANE_TIME: LANE_TIME,
     HEAT_MAX: HEAT_MAX, HEAT_YELLOW: HEAT_YELLOW, HEAT_RED: HEAT_RED, HEAT_FLASH: HEAT_FLASH,
     OVERHEAT_TIME: OVERHEAT_TIME, MAX_SPEED: MAX_SPEED, TURBO_SPEED: TURBO_SPEED,
     WORLD_SCALE: WORLD_SCALE,

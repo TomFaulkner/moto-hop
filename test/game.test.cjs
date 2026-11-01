@@ -798,3 +798,145 @@ test("surface patches never overlap raised pieces in any lane across laps", () =
     assert.ok(!overlap, `${p.f.type}@${p.x0} overlaps ${r.f.type}@${r.x0}`)
   }
 })
+
+function placeCpu(s, id, worldX, lane, speed) {
+  const cpu = s.cpus.find((c) => c.id === id)
+  assert.ok(cpu, "missing cpu " + id)
+  Object.assign(cpu, {
+    worldX, lane, laneY: G.LANE_Y[lane], speed,
+    laneFrom: lane, laneTo: lane, laneT: 0, changing: false,
+    height: 0, vy: 0, air: false, tilt: 0,
+    phase: "riding", crashT: 0, contactT: 0, onPiece: null, onRumble: false
+  })
+  return cpu
+}
+
+test("cpus have distinct palettes and lanes, and clone deeply", () => {
+  const s = G.initialState()
+  assert.equal(G.CPU_COUNT, 3)
+  assert.equal(s.cpus.length, G.CPU_COUNT)
+  assert.equal(new Set(s.cpus.map((c) => c.palette)).size, G.CPU_COUNT)
+  assert.equal(new Set(s.cpus.map((c) => c.lane)).size, G.CPU_COUNT)
+  const fields = ["id", "lane", "laneY", "worldX", "speed", "targetSpeed", "height", "vy", "air", "tilt", "phase", "crashT", "laneFrom", "laneTo", "laneT", "changing", "palette"]
+  for (const cpu of s.cpus) {
+    for (const field of fields) assert.ok(Object.prototype.hasOwnProperty.call(cpu, field), field)
+    assert.ok(cpu.targetSpeed < G.MAX_SPEED)
+    assert.ok(cpu.lane !== s.lane || cpu.worldX !== s.scrollX + s.x)
+  }
+  assert.equal(G.initialState(2).cpus.length, 2)
+  assert.equal(G.initialState(4).cpus.length, 4)
+  const copy = G.setInput(s, {})
+  assert.notEqual(copy.cpus, s.cpus)
+  assert.notEqual(copy.cpus[0], s.cpus[0])
+  copy.cpus[0].worldX++
+  assert.notEqual(copy.cpus[0].worldX, s.cpus[0].worldX)
+})
+
+test("cpus stay put while the player is idle", () => {
+  let s = G.initialState()
+  const starts = s.cpus.map((c) => c.worldX)
+  s = run(s, 120, {})
+  assert.deepEqual(s.cpus.map((c) => c.worldX), starts)
+  assert.ok(s.cpus.every((c) => c.speed === 0))
+})
+
+test("cpus start with the race and cruise below player top speed", () => {
+  const initial = G.initialState()
+  const starts = initial.cpus.map((c) => c.worldX)
+  const s = run(initial, 120, { throttle: true })
+  assert.equal(s.speed, G.MAX_SPEED)
+  for (let i = 0; i < s.cpus.length; i++) {
+    const cpu = s.cpus[i]
+    assert.ok(cpu.worldX > starts[i])
+    assert.ok(cpu.speed > 0)
+    assert.ok(cpu.speed < G.MAX_SPEED, "cpu speed " + cpu.speed)
+    assert.ok(Math.abs(cpu.speed - cpu.targetSpeed) < 0.01, "cpu speed " + cpu.speed)
+    assert.ok(s.speed > cpu.speed, "player can pass cpu " + cpu.id)
+  }
+})
+
+test("player front wheel clipping a cpu rear wheel crashes the player", () => {
+  let s = place(500, G.MAX_SPEED, 0)
+  const front = G.SPRITE.frontHub.x - G.SPRITE.rearHub.x
+  placeCpu(s, 0, 500 + front + 5, 0, 40)
+  s = run(s, 1, { throttle: true })
+  assert.equal(s.phase, "crash")
+  assert.equal(s.cpus[0].phase, "riding")
+})
+
+test("player beside a cpu in another lane does not crash", () => {
+  let s = place(500, G.MAX_SPEED, 0)
+  const front = G.SPRITE.frontHub.x - G.SPRITE.rearHub.x
+  placeCpu(s, 0, 500 + front + 5, 1, 40)
+  s = run(s, 10, { throttle: true })
+  assert.notEqual(s.phase, "crash")
+  assert.equal(s.cpus[0].phase, "riding")
+})
+
+test("mud-skilled cpu changes into a clear adjacent lane", () => {
+  const mud = G.COURSE.filter((f) => f.type === "mud").pop()
+  assert.ok(mud.lanes.includes(2) && !mud.lanes.includes(1))
+  let s = place(mud.x - 300, 0, 0, { raceStarted: true })
+  placeCpu(s, 0, mud.x - 80, 2, 100)
+  assert.ok(s.cpus[0].mudSkill >= 0.5)
+  s = run(s, Math.ceil(G.LANE_TIME * 60) + 2, {})
+  assert.equal(s.cpus[0].lane, 1)
+  assert.equal(s.cpus[0].laneY, G.LANE_Y[1])
+  assert.equal(s.cpus[0].laneT, 0)
+  assert.equal(s.cpus[0].phase, "riding")
+})
+
+test("mud-ploughing cpu stays in lane and slows", () => {
+  const mud = G.COURSE.filter((f) => f.type === "mud").pop()
+  let s = place(mud.x - 300, 0, 0, { raceStarted: true })
+  placeCpu(s, 1, mud.x + 8, mud.lanes[0], G.MAX_SPEED)
+  assert.ok(s.cpus[1].mudSkill < 0.5)
+  let guard = 0
+  while (s.cpus[1].speed > G.MUD_MAX + 0.5 && guard < 30) {
+    s = run(s, 1, {})
+    guard++
+    assert.ok(s.cpus[1].worldX < mud.x + mud.len, "cpu left mud before slowing")
+  }
+  assert.ok(s.cpus[1].speed <= G.MUD_MAX + 0.5, "cpu mud speed " + s.cpus[1].speed)
+  assert.equal(s.cpus[1].lane, mud.lanes[0])
+  assert.equal(s.cpus[1].phase, "riding")
+})
+
+test("cpu launches from a lip and lands safely with the ground pitch", () => {
+  const ramp = feature("ramp", "large")
+  const lane = ramp.lanes[0]
+  let s = place(ramp.x - 300, 0, 0, { raceStarted: true })
+  placeCpu(s, 1, ramp.x + ramp.len - 10, lane, 100)
+  let guard = 0
+  while (!s.cpus[1].air && guard < 80) {
+    s = run(s, 1, {})
+    guard++
+  }
+  assert.equal(s.cpus[1].air, true, "cpu should launch")
+  assert.ok(s.cpus[1].vy > 0)
+  s.cpus[1].tilt = 45
+  guard = 0
+  while (s.cpus[1].air && guard < 500) {
+    s = run(s, 1, {})
+    guard++
+  }
+  assert.equal(s.cpus[1].air, false)
+  assert.equal(s.cpus[1].phase, "riding")
+  const ground = G.surfaceAt(s.cpus[1].worldX, s.cpus[1].lane)
+  assert.ok(Math.abs(s.cpus[1].tilt - (ground ? ground.slope : 0)) < 0.01)
+})
+
+test("cpu rear-ending the player crashes, waits, and recovers", () => {
+  let s = place(500, 40, 2)
+  const front = G.SPRITE.frontHub.x - G.SPRITE.rearHub.x
+  placeCpu(s, 1, 500 - front - 5, 2, 100)
+  s = run(s, 1, {})
+  assert.notEqual(s.phase, "crash")
+  assert.equal(s.cpus[1].phase, "crashed")
+  assert.equal(s.cpus[1].speed, 0)
+  const stopped = s.cpus[1].worldX
+  s = run(s, Math.ceil(G.CRASH_TIME * 60) + 2, {})
+  assert.equal(s.cpus[1].phase, "riding")
+  assert.ok(s.cpus[1].speed > 0)
+  assert.ok(s.cpus[1].worldX > stopped)
+})
