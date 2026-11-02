@@ -817,7 +817,7 @@ test("cpus have distinct palettes and lanes, and clone deeply", () => {
   assert.equal(s.cpus.length, G.CPU_COUNT)
   assert.equal(new Set(s.cpus.map((c) => c.palette)).size, G.CPU_COUNT)
   assert.equal(new Set(s.cpus.map((c) => c.lane)).size, G.CPU_COUNT)
-  const fields = ["id", "lane", "laneY", "worldX", "speed", "targetSpeed", "height", "vy", "air", "tilt", "phase", "crashT", "laneFrom", "laneTo", "laneT", "changing", "palette"]
+  const fields = ["id", "lane", "laneY", "worldX", "speed", "targetSpeed", "wheelAngle", "height", "vy", "air", "tilt", "phase", "crashT", "laneFrom", "laneTo", "laneT", "changing", "palette"]
   for (const cpu of s.cpus) {
     for (const field of fields) assert.ok(Object.prototype.hasOwnProperty.call(cpu, field), field)
     assert.ok(cpu.targetSpeed < G.MAX_SPEED)
@@ -830,6 +830,31 @@ test("cpus have distinct palettes and lanes, and clone deeply", () => {
   assert.notEqual(copy.cpus[0], s.cpus[0])
   copy.cpus[0].worldX++
   assert.notEqual(copy.cpus[0].worldX, s.cpus[0].worldX)
+})
+
+test("cpu pose maps the same world x to the player's screen x", () => {
+  const s = place(500, 90, 1)
+  const cpu = placeCpu(s, 0, s.scrollX + s.x, 2, 90)
+  const p = G.cpuPose(s, cpu)
+  assert.equal(p.x, G.pose(s).x)
+  assert.equal(p.pivot, "rear")
+  assert.equal(p.y, cpu.laneY)
+  cpu.phase = "crashed"
+  cpu.crashT = 0.3
+  assert.equal(G.cpuPose(s, cpu).pivot, "center")
+})
+
+test("race position counts cpus ahead of the player", () => {
+  const s = place(500, 90, 1)
+  placeCpu(s, 0, 650, 0, 90)
+  placeCpu(s, 1, 450, 2, 90)
+  placeCpu(s, 2, 500, 3, 90)
+  assert.equal(G.racePosition(s), 2)
+  s.cpus[2].worldX = 700
+  assert.equal(G.racePosition(s), 3)
+  s.cpus[0].worldX = 400
+  s.cpus[2].worldX = 300
+  assert.equal(G.racePosition(s), 1)
 })
 
 test("cpus stay put while the player is idle", () => {
@@ -849,6 +874,7 @@ test("cpus start with the race and cruise below player top speed", () => {
     const cpu = s.cpus[i]
     assert.ok(cpu.worldX > starts[i])
     assert.ok(cpu.speed > 0)
+    assert.ok(cpu.wheelAngle > 0)
     assert.ok(cpu.speed < G.MAX_SPEED, "cpu speed " + cpu.speed)
     assert.ok(Math.abs(cpu.speed - cpu.targetSpeed) < 0.01, "cpu speed " + cpu.speed)
     assert.ok(s.speed > cpu.speed, "player can pass cpu " + cpu.id)

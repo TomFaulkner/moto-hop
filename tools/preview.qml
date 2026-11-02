@@ -30,6 +30,33 @@ Window {
     s.scrollX = worldX - s.x
     return s
   }
+  function placeCpu(s, id, worldX, lane, speed) {
+    var cpu = s.cpus[id]
+    cpu.worldX = worldX
+    cpu.lane = lane
+    cpu.laneFrom = lane
+    cpu.laneTo = lane
+    cpu.laneT = 0
+    cpu.laneY = Game.LANE_Y[lane]
+    cpu.changing = false
+    cpu.speed = speed
+    cpu.height = 0
+    cpu.vy = 0
+    cpu.air = false
+    cpu.tilt = 0
+    cpu.phase = "riding"
+    cpu.crashT = 0
+    cpu.contactT = 0
+    cpu.onPiece = null
+    cpu.onRumble = false
+    return cpu
+  }
+  function hideOtherCpus(s, keep) {
+    var playerX = s.scrollX + s.x
+    for (var i = 0; i < s.cpus.length; i++) {
+      if (i !== keep) placeCpu(s, i, playerX - 1000 - i * 100, s.cpus[i].lane, 0)
+    }
+  }
   function scenario(name) {
     var s = Game.initialState()
     var guard = 0
@@ -145,6 +172,47 @@ Window {
       var bump = course("bump", "small")
       s = place(s, bump.lanes[0], bump.x + 36, 40)
       s = play(s, 1, {})
+    } else if (name === "cpu-pack") {
+      // Mid-pack: two riders ahead and one behind, each in a different lane.
+      s = place(s, 1, 600, 100)
+      placeCpu(s, 0, 700, 0, 90)
+      placeCpu(s, 1, 545, 2, 95)
+      placeCpu(s, 2, 640, 3, 100)
+      s = play(s, 4, { throttle: true })
+    } else if (name === "cpu-pass") {
+      // Side by side in adjacent lanes, with the player drawing ahead.
+      s = place(s, 1, 600, Game.MAX_SPEED)
+      placeCpu(s, 0, 615, 2, 80)
+      hideOtherCpus(s, 0)
+      s = play(s, 4, { throttle: true })
+    } else if (name === "cpu-ramp") {
+      // The green rider launches from the big ramp beside the player's bypass.
+      var cpuJump = course("ramp", "large")
+      var jumpX = cpuJump.x + cpuJump.len - 8
+      s = place(s, 0, jumpX - 60, 100)
+      placeCpu(s, 1, jumpX, cpuJump.lanes[0], 100)
+      hideOtherCpus(s, 1)
+      guard = 0
+      while (!s.cpus[1].air && guard < 20) { s = play(s, 1, { throttle: true }); guard++ }
+      s = play(s, 3, { throttle: true })
+    } else if (name === "cpu-clip") {
+      // The player's front wheel clips the red rider's rear wheel.
+      var front = Game.SPRITE.frontHub.x - Game.SPRITE.rearHub.x
+      s = place(s, 1, 500, Game.MAX_SPEED)
+      placeCpu(s, 0, 500 + front + 5, 1, 40)
+      hideOtherCpus(s, 0)
+      s = play(s, 1, { throttle: true })
+      s = play(s, 8, {})
+    } else if (name === "cpu-mud") {
+      // The low-mud-skill green rider ploughs through beside the player.
+      var cpuMud = null
+      for (var cmi = 0; cmi < Game.COURSE.length; cmi++) {
+        if (Game.COURSE[cmi].type === "mud") cpuMud = Game.COURSE[cmi]
+      }
+      s = place(s, 1, cpuMud.x + 4, 40)
+      placeCpu(s, 1, cpuMud.x + 18, cpuMud.lanes[0], Game.MAX_SPEED)
+      hideOtherCpus(s, 1)
+      s = play(s, 8, { throttle: true })
     } else if (name === "land-crash") {
       // Nose-down into the gentle ramp's flat and tumble while the wedge is still visible.
       var lip = course("ramp", "large")

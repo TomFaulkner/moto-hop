@@ -8,7 +8,8 @@ Item {
   property var game: Game.initialState()
   readonly property int pixelScale: Math.max(1, Math.floor(Math.min(width / Game.VIEW_W, height / Game.VIEW_H)))
   readonly property string assetDir: Qt.resolvedUrl("assets/reactorcore/")
-  readonly property var sprites: ["chassis_blue.png", "wheel.png", "fork.png"]
+  readonly property var sprites: ["chassis_blue.png", "chassis_red.png", "chassis_green.png",
+                                  "chassis_yellow.png", "chassis_purple.png", "wheel.png", "fork.png"]
   // Canvas is center-anchored and scaled about its middle; this is the visual top-left.
   readonly property real viewLeft: canvas.x - (canvas.width * (pixelScale - 1)) / 2
   readonly property real viewTop: canvas.y - (canvas.height * (pixelScale - 1)) / 2
@@ -69,6 +70,44 @@ Item {
       }
       r(lit, 17, 17, 5, 1); r(lit, 17, 19, 5, 1); r(lit, 18, 21, 5, 1)
       r(dk, 15, 14, 5, 2); r(lit, 16, 14, 3, 1)
+    }
+
+    function drawBike(ctx, p, chassisName, cam) {
+      var S = Game.SPRITE
+      ctx.save()
+      ctx.translate(p.x, p.y + cam)
+      ctx.rotate(p.angleDeg * Math.PI / 180)
+      if (p.pivot === "center") ctx.translate(-Math.round(S.w / 2), -Math.round(S.h / 2))
+      else ctx.translate(-Math.round(S.rearHub.x), -S.h)
+      drawRearSuspension(ctx)
+      var hubs = [S.rearHub, S.frontHub]
+      for (var w = 0; w < 2; w++) {
+        ctx.save()
+        ctx.translate(hubs[w].x, hubs[w].y)
+        ctx.rotate(p.wheelAngle)
+        ctx.drawImage(img("wheel.png"), -S.wheelSize / 2, -S.wheelSize / 2)
+        ctx.restore()
+      }
+      ctx.drawImage(img(chassisName), S.chassis.x, S.chassis.y)
+      ctx.drawImage(img("fork.png"), S.fork.x, S.fork.y)
+      ctx.restore()
+    }
+
+    function drawShadow(ctx, rider, p, cam) {
+      // Shadows stay on the flat lane in the air and while tumbling. A flat
+      // bar is hidden wherever it would cross a raised piece in this lane.
+      var shadowW = 66
+      if (rider.air) shadowW = Math.max(18, Math.round(66 - (rider.height || 0) * 0.4))
+      var shX = Math.round(p.x - 4 + (66 - shadowW) / 2)
+      var overRaised = false
+      var scroll = Math.floor(p.scrollX)
+      for (var k = 0; k <= 4; k++) {
+        if (Game.surfaceAt(scroll + shX + shadowW * k / 4, rider.lane)) overRaised = true
+      }
+      if (!overRaised) {
+        ctx.fillStyle = "rgba(0,0,0,0.3)"
+        ctx.fillRect(shX, Math.round(rider.laneY - 2 + cam), shadowW, 3)
+      }
     }
 
     function laneHas(f, lane) {
@@ -387,47 +426,23 @@ Item {
       drawCourse(ctx, sx, cam)
       drawFinishLine(ctx, sx, cam)
 
-      // Shadow stays on the flat lane in the air and while tumbling.
-      // On a ramp it sits under the raised contact point.
-      var shadowY = g.laneY
-      var shadowW = 66
-      if (g.air) {
-        var lift = g.height || 0
-        shadowW = Math.max(18, Math.round(66 - lift * 0.4))
-      } else if (g.phase !== "crash" && (g.height || 0) > 0.5) {
-        shadowY = p.y
+      // Far lanes draw first; near lanes (larger laneY) overlap them.
+      var riders = [{ state: g, pose: p, laneY: g.laneY, chassis: "chassis_blue.png" }]
+      var palettes = ["chassis_red.png", "chassis_green.png", "chassis_yellow.png", "chassis_purple.png"]
+      var cpus = g.cpus || []
+      for (var ci = 0; ci < cpus.length; ci++) {
+        var cpu = cpus[ci]
+        var cp = Game.cpuPose(g, cpu)
+        if (cp.x < -100 || cp.x > W + 100) continue
+        riders.push({ state: cpu, pose: cp, laneY: cpu.laneY,
+                      chassis: palettes[cpu.palette % palettes.length] })
       }
-      // A flat bar cannot follow a slope or plateau edge, so hide it when
-      // any part of it would sit over a raised piece in this lane.
-      var shX = Math.round(g.x - 4 + (66 - shadowW) / 2)
-      var overRaised = false
-      for (var k = 0; k <= 4; k++) {
-        if (Game.surfaceAt(sx + shX + shadowW * k / 4, g.lane)) overRaised = true
+      riders.sort(function(a, b) { return a.laneY - b.laneY })
+      for (var ri = 0; ri < riders.length; ri++) {
+        var rider = riders[ri]
+        drawShadow(ctx, rider.state, rider.pose, cam)
+        drawBike(ctx, rider.pose, rider.chassis, cam)
       }
-      if (!overRaised) {
-        ctx.fillStyle = "rgba(0,0,0,0.3)"
-        ctx.fillRect(shX, Math.round(g.laneY - 2 + cam), shadowW, 3)
-      }
-
-      // Bike, rotated about the rear-wheel contact point
-      var S = Game.SPRITE
-      ctx.save()
-      ctx.translate(p.x, p.y + cam)
-      ctx.rotate(p.angleDeg * Math.PI / 180)
-      if (p.pivot === "center") ctx.translate(-Math.round(S.w / 2), -Math.round(S.h / 2))
-      else ctx.translate(-Math.round(S.rearHub.x), -S.h)
-      drawRearSuspension(ctx)
-      var hubs = [S.rearHub, S.frontHub]
-      for (var w = 0; w < 2; w++) {
-        ctx.save()
-        ctx.translate(hubs[w].x, hubs[w].y)
-        ctx.rotate(p.wheelAngle)
-        ctx.drawImage(img("wheel.png"), -S.wheelSize / 2, -S.wheelSize / 2)
-        ctx.restore()
-      }
-      ctx.drawImage(img("chassis_blue.png"), S.chassis.x, S.chassis.y)
-      ctx.drawImage(img("fork.png"), S.fork.x, S.fork.y)
-      ctx.restore()
 
       // Pixel smoke, drawn over the bike so puffs read on top of the engine.
       var sm = g.smoke || []
@@ -464,7 +479,9 @@ Item {
     font.bold: true
     font.pixelSize: 9 * scene.pixelScale
     color: scene.game.phase === "overheat" ? scene.heatColor(Game.HEAT_FLASH, scene.game.t) : "#fcfcfc"
-    text: Game.TITLE.toUpperCase() + "   " + scene.hudPhase(scene.game) + "   LANE " + (scene.game.lane + 1) + "   " + Math.round(scene.game.speed) + " KM/H"
+    text: Game.TITLE.toUpperCase() + "   " + scene.hudPhase(scene.game) + "   LANE " + (scene.game.lane + 1)
+          + "   POS " + Game.racePosition(scene.game) + "/" + (scene.game.cpus.length + 1)
+          + "   " + Math.round(scene.game.speed) + " KM/H"
   }
 
   Item {

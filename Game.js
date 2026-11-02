@@ -287,7 +287,7 @@ function makeCpu(id) {
   var start = [340, 430, 270, 520][id]
   return {
     id: id, lane: lane, laneY: LANE_Y[lane], worldX: start,
-    speed: 0, targetSpeed: cruise,
+    speed: 0, targetSpeed: cruise, wheelAngle: 0,
     height: 0, vy: 0, air: false, tilt: 0,
     phase: "riding", crashT: 0, contactT: 0,
     laneFrom: lane, laneTo: lane, laneT: 0, changing: false,
@@ -891,6 +891,7 @@ function updateCpu(s, cpu, dt) {
     applyBoostAt(cpu, cpu.worldX)
     applyTerrainAt(cpu, cpu.worldX, dt)
   }
+  cpu.wheelAngle += cpu.speed * WORLD_SCALE * dt / SPRITE.wheelR
 }
 
 function checkRiderCollisions(s) {
@@ -916,6 +917,15 @@ function updateCpus(s, dt) {
   if (!s.raceStarted) return
   for (var i = 0; i < s.cpus.length; i++) updateCpu(s, s.cpus[i], dt)
   checkRiderCollisions(s)
+}
+
+function racePosition(s) {
+  var playerX = s.scrollX + s.x
+  var position = 1
+  for (var i = 0; i < s.cpus.length; i++) {
+    if (s.cpus[i].worldX > playerX) position++
+  }
+  return position
 }
 
 // m:ss.hh. A negative time is "no lap yet".
@@ -1044,35 +1054,50 @@ function step(state, dt) {
 }
 
 // Render pose: rear-wheel contact point (x, y) plus rotation.
-function pose(s) {
-  if (s.phase === "crash") {
-    // Tumble about the bike's centre: one and a half flips, landing upside down.
-    var t = Math.min(1, s.crashT / (CRASH_TIME * 0.6))
-    var ground = s.crashY == null ? s.laneY : s.crashY
-    var cx = s.x - SPRITE.rearHub.x + SPRITE.w / 2 + 24 * t
-    var cy = ground - SPRITE.h / 2 - Math.sin(Math.PI * t) * 30
-    return { pivot: "center", x: Math.round(cx), y: Math.round(cy), angleDeg: 540 * t,
-             wheelAngle: s.wheelAngle, scrollX: s.scrollX }
-  }
-  var lift = s.height || 0
+function crashPose(x, ground, crashT, wheelAngle, scrollX) {
+  // Tumble about the bike's centre: one and a half flips, landing upside down.
+  var t = Math.min(1, crashT / (CRASH_TIME * 0.6))
+  var cx = x - SPRITE.rearHub.x + SPRITE.w / 2 + 24 * t
+  var cy = ground - SPRITE.h / 2 - Math.sin(Math.PI * t) * 30
+  return { pivot: "center", x: Math.round(cx), y: Math.round(cy), angleDeg: 540 * t,
+           wheelAngle: wheelAngle, scrollX: scrollX }
+}
+
+function ridingPose(rider, x, scrollX) {
+  var lift = rider.height || 0
   // Flat ground only. On a slope the rear contact is already on the face.
   // Nose-down around that contact would bury the front tire, so the rear
   // rises until the front tire is tangent to the road.
   var drop = 0
-  if (!s.air && !s.onRumble && s.onPiece == null && lift <= 0.5 && s.tilt > 0) {
-    drop = frontTireDrop(s.tilt)
+  if (!rider.air && !rider.onRumble && rider.onPiece == null && lift <= 0.5 && rider.tilt > 0) {
+    drop = frontTireDrop(rider.tilt)
     if (drop < 0) drop = 0
   }
-  var y = Math.round(s.laneY - lift - drop)
+  var y = Math.round(rider.laneY - lift - drop)
   if (drop > 0) {
-    var rad = s.tilt * Math.PI / 180
+    var rad = rider.tilt * Math.PI / 180
     var dx = SPRITE.frontHub.x - SPRITE.rearHub.x
     var dy = SPRITE.frontHub.y - SPRITE.h
     var bottom = y + dx * Math.sin(rad) + dy * Math.cos(rad) + SPRITE.wheelR
-    if (bottom > s.laneY) y -= 1
+    if (bottom > rider.laneY) y -= 1
   }
-  return { pivot: "rear", x: Math.round(s.x), y: y, angleDeg: s.tilt,
-           wheelAngle: s.wheelAngle, scrollX: s.scrollX }
+  return { pivot: "rear", x: Math.round(x), y: y, angleDeg: rider.tilt,
+           wheelAngle: rider.wheelAngle, scrollX: scrollX }
+}
+
+function pose(s) {
+  if (s.phase === "crash") {
+    var ground = s.crashY == null ? s.laneY : s.crashY
+    return crashPose(s.x, ground, s.crashT, s.wheelAngle, s.scrollX)
+  }
+  return ridingPose(s, s.x, s.scrollX)
+}
+
+function cpuPose(s, cpu) {
+  // Both worldX and the player's x locate the rear wheel, so they need no sprite offset.
+  var x = cpu.worldX - s.scrollX
+  if (cpu.phase === "crashed") return crashPose(x, cpu.laneY, cpu.crashT, cpu.wheelAngle, s.scrollX)
+  return ridingPose(cpu, x, s.scrollX)
 }
 
 if (typeof module !== "undefined") {
@@ -1093,7 +1118,8 @@ if (typeof module !== "undefined") {
     MUD_MAX: MUD_MAX, GRASS_MAX: GRASS_MAX, SIDE_HIT: SIDE_HIT,
     RUMBLE_MAX: RUMBLE_MAX, RUMBLE_TOOTH: RUMBLE_TOOTH, RUMBLE_H: RUMBLE_H, RUMBLE_TILT: RUMBLE_TILT,
     COURSE: COURSE, COURSE_LEN: COURSE_LEN, RAMP_SPEC: RAMP_SPEC,
-    initialState: initialState, setInput: setInput, step: step, pose: pose, heatBand: heatBand,
+    initialState: initialState, setInput: setInput, step: step, pose: pose, cpuPose: cpuPose, heatBand: heatBand,
+    racePosition: racePosition,
     courseFeature: courseFeature, rampHeight: rampHeight, rampSlope: rampSlope,
     surfaceAt: surfaceAt, cameraY: cameraY, formatRaceTime: formatRaceTime,
     frontTireDrop: frontTireDrop, downhillBonus: downhillBonus, rumbleSample: rumbleSample
