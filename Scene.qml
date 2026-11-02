@@ -9,7 +9,13 @@ Item {
   readonly property int pixelScale: Math.max(1, Math.floor(Math.min(width / Game.VIEW_W, height / Game.VIEW_H)))
   readonly property string assetDir: Qt.resolvedUrl("assets/reactorcore/")
   readonly property var sprites: ["chassis_blue.png", "chassis_red.png", "chassis_green.png",
-                                  "chassis_yellow.png", "chassis_purple.png", "wheel.png", "fork.png"]
+                                  "chassis_yellow.png", "chassis_purple.png", "wheel.png", "fork.png"].concat(riderSprites())
+  function riderSprites() {
+    var out = [], poses = ["crouch", "lean", "tuck"], cols = ["blue", "red", "green", "yellow", "purple"]
+    for (var i = 0; i < poses.length; i++)
+      for (var j = 0; j < cols.length; j++) out.push("../rider/rider_" + poses[i] + "_" + cols[j] + ".png")
+    return out
+  }
   // Canvas is center-anchored and scaled about its middle; this is the visual top-left.
   readonly property real viewLeft: canvas.x - (canvas.width * (pixelScale - 1)) / 2
   readonly property real viewTop: canvas.y - (canvas.height * (pixelScale - 1)) / 2
@@ -72,7 +78,7 @@ Item {
       r(dk, 15, 14, 5, 2); r(lit, 16, 14, 3, 1)
     }
 
-    function drawBike(ctx, p, chassisName, cam) {
+    function drawBike(ctx, p, chassisName, cam, riderName) {
       var S = Game.SPRITE
       ctx.save()
       ctx.translate(p.x, p.y + cam)
@@ -90,6 +96,7 @@ Item {
       }
       ctx.drawImage(img(chassisName), S.chassis.x, S.chassis.y)
       ctx.drawImage(img("fork.png"), S.fork.x, S.fork.y)
+      if (riderName) ctx.drawImage(img("../rider/" + riderName), Game.RIDER.x, Game.RIDER.y)
       ctx.restore()
     }
 
@@ -427,21 +434,24 @@ Item {
       drawFinishLine(ctx, sx, cam)
 
       // Far lanes draw first; near lanes (larger laneY) overlap them.
-      var riders = [{ state: g, pose: p, laneY: g.laneY, chassis: "chassis_blue.png" }]
-      var palettes = ["chassis_red.png", "chassis_green.png", "chassis_yellow.png", "chassis_purple.png"]
+      var riders = [{ state: g, pose: p, laneY: g.laneY, chassis: "chassis_blue.png", colour: "blue" }]
+      var colours = ["red", "green", "yellow", "purple"]
       var cpus = g.cpus || []
       for (var ci = 0; ci < cpus.length; ci++) {
         var cpu = cpus[ci]
         var cp = Game.cpuPose(g, cpu)
         if (cp.x < -100 || cp.x > W + 100) continue
         riders.push({ state: cpu, pose: cp, laneY: cpu.laneY,
-                      chassis: palettes[cpu.palette % palettes.length] })
+                      chassis: "chassis_" + colours[cpu.palette % colours.length] + ".png",
+                      colour: colours[cpu.palette % colours.length] })
       }
       riders.sort(function(a, b) { return a.laneY - b.laneY })
       for (var ri = 0; ri < riders.length; ri++) {
         var rider = riders[ri]
         drawShadow(ctx, rider.state, rider.pose, cam)
-        drawBike(ctx, rider.pose, rider.chassis, cam)
+        var st = rider.state
+        var rp = Game.riderPose(st.tilt || 0, !!st.air, st.phase)
+        drawBike(ctx, rider.pose, rider.chassis, cam, "rider_" + rp + "_" + rider.colour + ".png")
       }
 
       // Pixel smoke, drawn over the bike so puffs read on top of the engine.

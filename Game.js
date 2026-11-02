@@ -34,6 +34,9 @@ var SPRITE = {
   frontHub: { x: 66.5, y: 31.5 },
   wheelR: 11.5
 }
+// Rider sprite origin in assembled-bike pixels (tools/make_rider.py builds the
+// rider on a 48x56 canvas covering bike x 18..66, y -24..32).
+var RIDER = { x: 18, y: -24 }
 // Exhaust point in assembled-sprite pixels, on top of the engine cases.
 var ENGINE = { x: 36, y: 24 }
 // One bike-height. Ramp peaks below are multiples of this.
@@ -354,6 +357,14 @@ function heatBand(heat) {
   if (heat >= HEAT_RED) return "red"
   if (heat >= HEAT_YELLOW) return "yellow"
   return "green"
+}
+
+// Sprite pose only; physics and input remain independent of the rider art.
+function riderPose(tiltDeg, air, phase) {
+  if (phase === "crash" || phase === "crashed") return "tuck"
+  if (tiltDeg <= -10) return "lean"
+  if (tiltDeg >= 8 || (air && tiltDeg > 0)) return "tuck"
+  return "crouch"
 }
 
 function rampHeight(size) {
@@ -1103,7 +1114,7 @@ function cpuPose(s, cpu) {
 if (typeof module !== "undefined") {
   module.exports = {
     TITLE: TITLE, VIEW_W: VIEW_W, VIEW_H: VIEW_H, LANES: LANES, LANE_Y: LANE_Y,
-    TRACK_TOP: TRACK_TOP, LANE_H: LANE_H, SPRITE: SPRITE, BIKE_H: BIKE_H, CRASH_TIME: CRASH_TIME,
+    TRACK_TOP: TRACK_TOP, LANE_H: LANE_H, SPRITE: SPRITE, RIDER: RIDER, BIKE_H: BIKE_H, CRASH_TIME: CRASH_TIME,
     CPU_COUNT: CPU_COUNT, LANE_TIME: LANE_TIME,
     HEAT_MAX: HEAT_MAX, HEAT_YELLOW: HEAT_YELLOW, HEAT_RED: HEAT_RED, HEAT_FLASH: HEAT_FLASH,
     OVERHEAT_TIME: OVERHEAT_TIME, MAX_SPEED: MAX_SPEED, TURBO_SPEED: TURBO_SPEED,
@@ -1119,7 +1130,7 @@ if (typeof module !== "undefined") {
     RUMBLE_MAX: RUMBLE_MAX, RUMBLE_TOOTH: RUMBLE_TOOTH, RUMBLE_H: RUMBLE_H, RUMBLE_TILT: RUMBLE_TILT,
     COURSE: COURSE, COURSE_LEN: COURSE_LEN, RAMP_SPEC: RAMP_SPEC,
     initialState: initialState, setInput: setInput, step: step, pose: pose, cpuPose: cpuPose, heatBand: heatBand,
-    racePosition: racePosition,
+    riderPose: riderPose, racePosition: racePosition,
     courseFeature: courseFeature, rampHeight: rampHeight, rampSlope: rampSlope,
     surfaceAt: surfaceAt, cameraY: cameraY, formatRaceTime: formatRaceTime,
     frontTireDrop: frontTireDrop, downhillBonus: downhillBonus, rumbleSample: rumbleSample

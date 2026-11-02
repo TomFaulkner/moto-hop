@@ -186,11 +186,11 @@ Window {
       hideOtherCpus(s, 0)
       s = play(s, 4, { throttle: true })
     } else if (name === "cpu-ramp") {
-      // The green rider launches from the big ramp beside the player's bypass.
-      var cpuJump = course("ramp", "large")
+      // The green rider jumps the small two-lane ramp; the player bypasses on the flat.
+      var cpuJump = course("ramp", "small")
       var jumpX = cpuJump.x + cpuJump.len - 8
-      s = place(s, 0, jumpX - 60, 100)
-      placeCpu(s, 1, jumpX, cpuJump.lanes[0], 100)
+      s = place(s, 3, jumpX - 70, 100)
+      placeCpu(s, 1, jumpX - 30, cpuJump.lanes[1], 100)
       hideOtherCpus(s, 1)
       guard = 0
       while (!s.cpus[1].air && guard < 20) { s = play(s, 1, { throttle: true }); guard++ }

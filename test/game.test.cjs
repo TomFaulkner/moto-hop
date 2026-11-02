@@ -33,6 +33,30 @@ test("holding left at speed pops a wheelie", () => {
   assert.equal(s.phase, "wheelie")
 })
 
+test("rider pose follows the wheelie and nose-down thresholds", () => {
+  assert.equal(G.riderPose(-10, false, "wheelie"), "lean")
+  assert.equal(G.riderPose(-9.9, false, "riding"), "crouch")
+  assert.equal(G.riderPose(8, false, "riding"), "tuck")
+  assert.equal(G.riderPose(7.9, false, "riding"), "crouch")
+})
+
+test("airborne nose-down and crash poses tuck the rider", () => {
+  assert.equal(G.riderPose(1, true, "air"), "tuck")
+  assert.equal(G.riderPose(0, true, "air"), "crouch")
+  assert.equal(G.riderPose(-20, true, "air"), "lean")
+  assert.equal(G.riderPose(0, false, "crash"), "tuck")
+  assert.equal(G.riderPose(0, false, "crashed"), "tuck")
+})
+
+test("every rider pose and colour has a sprite on disk", () => {
+  const fs = require("fs")
+  const path = require("path")
+  assert.ok(Number.isInteger(G.RIDER.x) && Number.isInteger(G.RIDER.y))
+  for (const pose of ["crouch", "lean", "tuck"])
+    for (const c of ["blue", "red", "green", "yellow", "purple"])
+      assert.ok(fs.existsSync(path.join(__dirname, "..", "assets", "rider", `rider_${pose}_${c}.png`)), pose + " " + c)
+})
+
 test("turbo raises heat and the speed cap", () => {
   const normal = run(G.initialState(), 90, { throttle: true })
   const turbo = run(G.initialState(), 90, { turbo: true })
