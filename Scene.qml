@@ -30,9 +30,27 @@ Item {
   function hudPhase(g) {
     if (!g) return ""
     if (g.phase === "overheat") return "OVERHEAT"
+    if (g.phase === "finished") return "FINISH"
     if (g.input && g.input.turbo && g.phase !== "crash") return "TURBO"
     return (g.phase || "").toUpperCase()
   }
+  function lapOf(g) {
+    var n = g && g.lap > 0 ? g.lap : 1
+    return Math.min(n, Game.TOTAL_LAPS)
+  }
+  function ordinal(n) {
+    var v = Math.max(1, Math.floor(n || 1))
+    if (Math.floor(v / 10) % 10 === 1) return v + "th"
+    if (v % 10 === 1) return v + "st"
+    if (v % 10 === 2) return v + "nd"
+    if (v % 10 === 3) return v + "rd"
+    return v + "th"
+  }
+  function placeText(g) {
+    var field = (g && g.cpus ? g.cpus.length : 0) + 1
+    return ordinal((g && g.finishPosition) || 1) + " / " + field
+  }
+  function blink(t) { return Math.floor((t || 0) * 2) % 2 === 0 }
 
   onGameChanged: canvas.requestPaint()
 
@@ -517,9 +535,10 @@ Item {
       font.bold: true
       font.pixelSize: 8 * scene.pixelScale
       color: "#fcfcfc"
-      text: "LAP " + (scene.game.lap > 0 ? scene.game.lap : 1)
+      text: "LAP " + scene.lapOf(scene.game) + "/" + Game.TOTAL_LAPS
             + "  " + Game.formatRaceTime(scene.game.lapTime)
             + "  LAST " + Game.formatRaceTime(scene.game.lastLap)
+             + "  BEST " + Game.formatRaceTime(scene.game.bestTime)
     }
     Rectangle {
       id: tempTrack
@@ -559,5 +578,99 @@ Item {
     color: (Math.floor((scene.game.t || 0) * 8) % 2 === 0) ? "#f83800" : "#fcfcfc"
     x: scene.viewLeft + (Game.VIEW_W * scene.pixelScale - width) / 2
     y: scene.viewTop + 32 * scene.pixelScale
+  }
+
+  // Control hint along the bottom edge of the view.
+  Rectangle {
+    id: hintBar
+    x: scene.viewLeft
+    y: scene.viewTop + (Game.VIEW_H - 10) * scene.pixelScale
+    width: Game.VIEW_W * scene.pixelScale
+    height: 10 * scene.pixelScale
+    color: "#000000"
+    opacity: 0.6
+    Text {
+      anchors.centerIn: parent
+      text: "SPACE throttle  SHIFT turbo  \u2191\u2193 lane  \u2190\u2192 lean  R restart  ESC close"
+      font.family: "monospace"
+      font.bold: true
+      font.pixelSize: 7 * scene.pixelScale
+      color: "#fcfcfc"
+    }
+  }
+
+  // Results overlay: a frozen race, so everything here reads one snapshot.
+  Item {
+    id: results
+    visible: scene.game.phase === "finished"
+    x: scene.viewLeft
+    y: scene.viewTop
+    width: Game.VIEW_W * scene.pixelScale
+    height: Game.VIEW_H * scene.pixelScale
+
+    Rectangle { anchors.fill: parent; color: "#000000"; opacity: 0.72 }
+
+    Rectangle {
+      anchors.centerIn: parent
+      width: resultsColumn.childrenRect.width + 24 * scene.pixelScale
+      height: resultsColumn.childrenRect.height + 16 * scene.pixelScale
+      color: "#000000"
+      border.color: "#fcfcfc"
+      border.width: scene.pixelScale
+    }
+    Column {
+      id: resultsColumn
+      anchors.centerIn: parent
+      spacing: 7 * scene.pixelScale
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: "FINISH"
+        font.family: "monospace"
+        font.bold: true
+        font.pixelSize: 18 * scene.pixelScale
+        color: "#fcfcfc"
+      }
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: scene.placeText(scene.game)
+        font.family: "monospace"
+        font.bold: true
+        font.pixelSize: 12 * scene.pixelScale
+        color: "#f8f800"
+      }
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: "TIME  " + Game.formatRaceTime(scene.game.finishTime)
+        font.family: "monospace"
+        font.bold: true
+        font.pixelSize: 10 * scene.pixelScale
+        color: "#fcfcfc"
+      }
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: "BEST  " + Game.formatRaceTime(scene.game.bestTime)
+        font.family: "monospace"
+        font.bold: true
+        font.pixelSize: 10 * scene.pixelScale
+        color: "#58d854"
+      }
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        visible: !!scene.game.newBest
+        text: "NEW BEST"
+        font.family: "monospace"
+        font.bold: true
+        font.pixelSize: 10 * scene.pixelScale
+        color: scene.blink(scene.game.t) ? "#f8f800" : "#fcfcfc"
+      }
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: "R TO RESTART"
+        font.family: "monospace"
+        font.bold: true
+        font.pixelSize: 10 * scene.pixelScale
+        color: scene.blink(scene.game.t) ? "#f83800" : "#fcfcfc"
+      }
+    }
   }
 }

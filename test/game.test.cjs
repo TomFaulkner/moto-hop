@@ -804,6 +804,91 @@ test("a crash that stops short of the line does not count", () => {
   assert.ok(s.lastLap < 0)
 })
 
+test("crossing the last finish ends the race with a time and position", () => {
+  assert.equal(G.TOTAL_LAPS, 3)
+  const start = place(G.COURSE_LEN * G.TOTAL_LAPS - 30, 120, 1, {
+    lap: G.TOTAL_LAPS, raceStarted: true, raceTime: 200, lapTime: 70
+  })
+  placeCpu(start, 0, G.COURSE_LEN * G.TOTAL_LAPS + 40, 0, 100)
+  placeCpu(start, 1, G.COURSE_LEN * G.TOTAL_LAPS - 900, 2, 100)
+  let s = start
+  let guard = 0
+  while (s.phase !== "finished" && guard < 60) {
+    s = run(s, 1, { throttle: true })
+    guard++
+    assert.ok(s.scrollX + s.x < G.COURSE_LEN * G.TOTAL_LAPS + 30, "world ran away")
+  }
+  assert.equal(s.phase, "finished")
+  assert.equal(s.lap, G.TOTAL_LAPS)
+  assert.equal(s.finishPosition, 2, "one cpu ahead is second place")
+  assert.ok(s.finishTime > 200 && s.finishTime < 200.5, "time " + s.finishTime)
+  assert.equal(s.raceTime, s.finishTime)
+  assert.ok(s.lastLap > 70 && s.lastLap < 70.3, "last " + s.lastLap)
+  assert.equal(s.bestTime, s.finishTime)
+  assert.equal(s.newBest, true)
+
+  // The race is frozen: nothing moves but the blink clock.
+  const frozen = run(s, 30, { throttle: true, turbo: true, crash: true, up: true })
+  assert.equal(frozen.phase, "finished")
+  assert.equal(frozen.scrollX, s.scrollX)
+  assert.equal(frozen.cpus.length, s.cpus.length)
+  assert.deepEqual(frozen.cpus.map((c) => c.worldX), s.cpus.map((c) => c.worldX))
+  assert.ok(frozen.t > s.t)
+})
+
+test("finishing earlier laps keeps racing", () => {
+  let s = place(G.COURSE_LEN - 30, 120, 1, { raceStarted: true })
+  let guard = 0
+  while (s.lap < 2 && guard < 40) { s = run(s, 1, { throttle: true }); guard++ }
+  assert.equal(s.lap, 2)
+  assert.notEqual(s.phase, "finished")
+  assert.ok(s.finishTime < 0)
+  // A slower first race must not beat the banked best.
+  let later = place(G.COURSE_LEN * 2 - 30, 120, 1, {
+    lap: 2, raceStarted: true, raceTime: 400, bestTime: 12.5
+  })
+  guard = 0
+  while (later.lap < 3 && guard < 40) { later = run(later, 1, { throttle: true }); guard++ }
+  assert.equal(later.lap, 3)
+  assert.notEqual(later.phase, "finished")
+  assert.equal(later.bestTime, 12.5)
+  assert.equal(later.newBest, false)
+})
+
+test("preferences round-trip and reject junk", () => {
+  assert.deepEqual(G.parsePreferences(""), { version: 1, bestTime: -1 })
+  assert.deepEqual(G.parsePreferences("not json"), { version: 1, bestTime: -1 })
+  assert.deepEqual(G.parsePreferences("{\"nope\":true}"), { version: 1, bestTime: -1 })
+  assert.deepEqual(G.parsePreferences('{"bestTime":92.5}'), { version: 1, bestTime: 92.5 })
+  assert.deepEqual(G.parsePreferences('{"bestTime":-4}'), { version: 1, bestTime: -1 })
+  assert.deepEqual(G.parsePreferences('{"bestTime":"nope"}'), { version: 1, bestTime: -1 })
+  assert.deepEqual(G.parsePreferences('{"bestTime":null}'), { version: 1, bestTime: -1 })
+  assert.deepEqual(G.parsePreferences(G.serializePreferences(61.08)), { version: 1, bestTime: 61.08 })
+  assert.deepEqual(G.parsePreferences(G.serializePreferences(-1)), { version: 1, bestTime: -1 })
+  assert.ok(G.serializePreferences(61.08).indexOf('"version": 1') >= 0)
+})
+
+test("restart returns a fresh race that keeps the best time", () => {
+  const done = place(G.COURSE_LEN * G.TOTAL_LAPS - 30, 120, 1, {
+    lap: G.TOTAL_LAPS, raceStarted: true, raceTime: 200, lapTime: 70
+  })
+  let s = done
+  let guard = 0
+  while (s.phase !== "finished" && guard < 60) { s = run(s, 1, { throttle: true }); guard++ }
+  assert.equal(s.phase, "finished")
+  const fresh = G.freshRace(s.bestTime)
+  assert.equal(fresh.phase, "idle")
+  assert.equal(fresh.lap, 1)
+  assert.equal(fresh.lapTime, 0)
+  assert.equal(fresh.raceTime, 0)
+  assert.ok(fresh.lastLap < 0)
+  assert.ok(fresh.finishTime < 0)
+  assert.equal(fresh.scrollX, 0)
+  assert.equal(fresh.bestTime, s.finishTime)
+  assert.equal(G.freshRace(-1).bestTime, -1)
+  assert.deepEqual(fresh.cpus.map((c) => c.worldX), G.initialState().cpus.map((c) => c.worldX))
+})
+
 test("surface patches never overlap raised pieces in any lane across laps", () => {
   const PATCH = ["grass", "mud", "boost", "rumble", "cool"]
   const items = []

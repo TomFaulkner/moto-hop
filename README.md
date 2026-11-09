@@ -33,6 +33,13 @@ CPU riders share the player's side-crash rule on ramp edges, recover after
 overheat and stall if they redline while catching up). Cooling arrows zero
 their heat too.
 
+The race is three laps of the loop. The finish that would start lap four ends
+it: everything freezes, a results panel shows your position out of four, the
+total race time, and the best time banked in
+`~/.local/state/moto-hop/prefs.json` (a new best is flagged). `R` restarts and
+keeps the best. The HUD counts `LAP n/3` with the current lap, the last split,
+and the best total.
+
 The HUD speed is km/h (120 cruise, 180 turbo). The track moves at 1.5 pixels
 per km/h each second. Mud and boost never cover all four lanes, and mud is
 short. Grass or mud after a ramp sits in the landing and the bypass, so a
@@ -56,6 +63,7 @@ front tire on the road.
 - `←` / `A`: lean back (wheelie, at speed); in the air, nose up
 - `→` / `D`: lean forward. On flat ground the rear lifts so the front tire stays on the road. In the air, nose down.
 - `↑` `↓` / `W` `S`: change lane
+- `R`: restart the race (any time; the best time is kept)
 - `X` / `C`: crash (debug pose)
 - `Esc` or click outside: close
 
@@ -79,6 +87,6 @@ QT_QPA_PLATFORM=offscreen python tools/shoot.py screens   # needs PySide6 6.x
 writes `idle`, `riding`, `wheelie`, `lane`, `crash`, `crashed`, `turbo`, `overheat`,
 `ramp-up`, `airborne`, `cool-arrow`, `boost`, `land-crash`, `wide-partial`,
 `hazards`, `rumble`, `nose`, `downhill`, `ramp-climb`, `pieces-closeup`,
-`finish`, `ramp-top` PNGs.
+`finish`, `results`, `ramp-top`, `cpu-pack`, `cpu-pass`, `cpu-ramp`, `cpu-clip`, `cpu-mud`, `cpu-side-crash`, `cpu-turbo` PNGs.
 
 See `CREDITS.md` for asset sources and licenses.

@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import "Game.js" as Game
@@ -14,10 +15,18 @@ Item {
   property var game: Game.initialState()
   property var held: ({ up: false, down: false, left: false, right: false, throttle: false, turbo: false, crash: false })
   property double lastTick: 0
+  // Persisted best total race time. Negative means no time banked yet.
+  property double bestTime: -1
+  property bool preferencesLoaded: false
+
+  readonly property string homeDir: Quickshell.env("HOME")
+  readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (homeDir + "/.local/state")
+  readonly property string stateDir: stateHome + "/moto-hop"
+  readonly property string statePath: stateDir + "/prefs.json"
 
   function open(payloadJson) {
     opened = true
-    game = Game.initialState()
+    game = Game.freshRace(bestTime)
     lastTick = Date.now()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -30,6 +39,11 @@ Item {
 
   function releaseAll() {
     held = { up: false, down: false, left: false, right: false, throttle: false, turbo: false, crash: false }
+  }
+  function restart() {
+    releaseAll()
+    game = Game.freshRace(bestTime)
+    lastTick = Date.now()
   }
   function keyName(key) {
     switch (key) {
@@ -45,6 +59,7 @@ Item {
   }
   function setKey(event, down) {
     if (event.key === Qt.Key_Escape) { if (down) dismiss(); return true }
+    if (event.key === Qt.Key_R && down) { restart(); return true }
     var name = keyName(event.key)
     if (!name) return false
     if (event.isAutoRepeat) return true
@@ -53,6 +68,46 @@ Item {
     h[name] = down
     held = h
     return true
+  }
+
+  function loadPreferences(raw) {
+    if (preferencesLoaded) return
+    bestTime = Game.parsePreferences(raw).bestTime
+    preferencesLoaded = true
+  }
+  function savePreferences() {
+    preferencesFile.setText(Game.serializePreferences(bestTime))
+  }
+  function scheduleSave() {
+    if (preferencesLoaded) saveTimer.restart()
+  }
+
+  Component.onCompleted: ensureStateDir.running = true
+
+  // mkdir -p before the first read, so the path always exists when we write.
+  Process {
+    id: ensureStateDir
+    running: false
+    command: ["mkdir", "-p", root.stateDir]
+    onExited: preferencesFile.reload()
+  }
+
+  FileView {
+    id: preferencesFile
+    path: root.statePath
+    preload: false
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: function() { root.loadPreferences(preferencesFile.text()) }
+    onLoadFailed: function(error) { root.loadPreferences("") }
+  }
+
+  Timer {
+    id: saveTimer
+    interval: 150
+    repeat: false
+    onTriggered: root.savePreferences()
   }
 
   Timer {
@@ -64,6 +119,11 @@ Item {
       var dt = Math.min(0.05, (now - root.lastTick) / 1000)
       root.lastTick = now
       root.game = Game.step(Game.setInput(root.game, root.held), dt)
+      // Bank the run the frame it finishes; every later frame is frozen.
+      if (root.game.phase === "finished" && root.game.bestTime !== root.bestTime) {
+        root.bestTime = root.game.bestTime
+        root.scheduleSave()
+      }
     }
   }
 

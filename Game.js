@@ -10,7 +10,10 @@
 // Speed on the HUD is km/h. The track scrolls at WORLD_SCALE pixels per
 // (km/h · second). Holding throttle or turbo on a down-slope adds a small
 // temporary bump over that cap. On flat ground a forward lean lifts the
-// rear so the front tire stays on the road.
+// rear so the front tire stays on the road. The race is TOTAL_LAPS laps of the
+// loop: the finish that would start the next lap freezes everything and
+// records the total race time. The best total time lives outside the rules —
+// the overlay persists it with parsePreferences / serializePreferences.
 // See docs/track-pieces.md.
 
 var TITLE = "Moto Hop"
@@ -72,6 +75,8 @@ var LANE_TIME = 0.25
 var CRASH_TIME = 1.5
 var CPU_COUNT = 3
 var CPU_LOOKAHEAD = 90
+// A race is three laps of COURSE_LEN. Crossing the line on the last lap ends it.
+var TOTAL_LAPS = 3
 var CPU_RIDER_GAP = 40
 var CPU_REAR_OVERLAP = 10
 var CPU_RUBBERBAND = 10
@@ -314,9 +319,18 @@ function initialState(cpuCount) {
     air: false, height: 0, vy: 0, onPiece: null, onRumble: false,
     boostT: 0, boostHeld: false,
     lap: 1, lapTime: 0, lastLap: -1,
+    raceTime: 0, finishTime: -1, finishPosition: 0,
+    bestTime: -1, newBest: false,
     input: { up: false, down: false, left: false, right: false, throttle: false, turbo: false, crash: false },
     prevInput: { up: false, down: false, crash: false }
   }
+}
+
+// A fresh race that keeps the persisted best time. No best yet is -1.
+function freshRace(bestTime, cpuCount) {
+  var s = initialState(cpuCount)
+  s.bestTime = bestTimeValue(bestTime)
+  return s
 }
 
 function clone(s) {
@@ -1020,6 +1034,20 @@ function racePosition(s) {
   return position
 }
 
+// Ending a race freezes the clock and the running order, then banks the best
+// time. No best yet (-1) or a faster run both replace it.
+function finishRace(s, atTime) {
+  s.lap = TOTAL_LAPS
+  s.phase = "finished"
+  s.finishTime = atTime
+  s.raceTime = atTime
+  s.finishPosition = racePosition(s)
+  if (s.finishTime >= 0 && (s.bestTime < 0 || s.finishTime < s.bestTime)) {
+    s.bestTime = s.finishTime
+    s.newBest = true
+  }
+}
+
 // m:ss.hh. A negative time is "no lap yet".
 function formatRaceTime(t) {
   if (t == null || !(t >= 0) || t !== t) return "--:--.--"
@@ -1052,6 +1080,33 @@ function noteFinish(s, prevScroll, dt) {
   s.lastLap = completed
   s.lapTime = frac * dt
   s.lap += b - a
+  // Three laps run: the crossing that would start lap 4 ends the race.
+  if (s.lap > TOTAL_LAPS) finishRace(s, s.raceTime - frac * dt)
+}
+
+// A stored best time: any finite non-negative number, else "no time yet" (-1).
+function bestTimeValue(value) {
+  if (value == null) return -1
+  var n = Number(value)
+  if (!(n >= 0) || n !== n || n === Infinity) return -1
+  return n
+}
+
+function parsePreferences(raw) {
+  var defaults = { version: 1, bestTime: -1 }
+  if (!raw) return defaults
+  try {
+    var value = JSON.parse(raw)
+    var best = -1
+    if (value && typeof value === "object") best = bestTimeValue(value.bestTime)
+    return { version: 1, bestTime: best }
+  } catch (error) {
+    return defaults
+  }
+}
+
+function serializePreferences(bestTime) {
+  return JSON.stringify({ version: 1, bestTime: bestTimeValue(bestTime) }, null, 2) + "\n"
 }
 
 function assignPhase(s) {
@@ -1066,12 +1121,14 @@ function assignPhase(s) {
 
 function step(state, dt) {
   var s = clone(state)
+  s.t += dt
+  // Results are frozen: only the blink clock runs until a restart.
+  if (state.phase === "finished") return s
   var inp = s.input
   var pressedUp = inp.up && !s.prevInput.up
   var pressedDown = inp.down && !s.prevInput.down
   var pressedCrash = inp.crash && !s.prevInput.crash
   s.prevInput = { up: inp.up, down: inp.down, crash: inp.crash }
-  s.t += dt
   if (inp.throttle || inp.turbo || s.speed > 0 || s.scrollX > 0) s.raceStarted = true
   s.changing = false
   s.onRumble = false
@@ -1124,8 +1181,10 @@ function step(state, dt) {
 
   var prevScroll = s.scrollX
   s.scrollX += s.speed * WORLD_SCALE * dt
+  if (s.raceStarted) s.raceTime += dt
   s.lapTime += dt
   noteFinish(s, prevScroll, dt)
+  if (s.phase === "finished") return s
 
   if (s.phase !== "crash" && s.phase !== "overheat") {
     interactTrack(s, prevScroll, dt)
@@ -1196,7 +1255,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     TITLE: TITLE, VIEW_W: VIEW_W, VIEW_H: VIEW_H, LANES: LANES, LANE_Y: LANE_Y,
     TRACK_TOP: TRACK_TOP, LANE_H: LANE_H, SPRITE: SPRITE, RIDER: RIDER, BIKE_H: BIKE_H, CRASH_TIME: CRASH_TIME,
-    CPU_COUNT: CPU_COUNT, LANE_TIME: LANE_TIME,
+    CPU_COUNT: CPU_COUNT, LANE_TIME: LANE_TIME, TOTAL_LAPS: TOTAL_LAPS,
     HEAT_MAX: HEAT_MAX, HEAT_YELLOW: HEAT_YELLOW, HEAT_RED: HEAT_RED, HEAT_FLASH: HEAT_FLASH,
     OVERHEAT_TIME: OVERHEAT_TIME, MAX_SPEED: MAX_SPEED, TURBO_SPEED: TURBO_SPEED,
     WORLD_SCALE: WORLD_SCALE,
@@ -1210,11 +1269,12 @@ if (typeof module !== "undefined") {
     MUD_MAX: MUD_MAX, GRASS_MAX: GRASS_MAX, SIDE_HIT: SIDE_HIT,
     RUMBLE_MAX: RUMBLE_MAX, RUMBLE_TOOTH: RUMBLE_TOOTH, RUMBLE_H: RUMBLE_H, RUMBLE_TILT: RUMBLE_TILT,
     COURSE: COURSE, COURSE_LEN: COURSE_LEN, RAMP_SPEC: RAMP_SPEC,
-    initialState: initialState, setInput: setInput, step: step, pose: pose, cpuPose: cpuPose, heatBand: heatBand,
+    initialState: initialState, freshRace: freshRace, setInput: setInput, step: step, pose: pose, cpuPose: cpuPose, heatBand: heatBand,
     riderPose: riderPose, racePosition: racePosition,
     courseFeature: courseFeature, rampHeight: rampHeight, rampSlope: rampSlope,
     surfaceAt: surfaceAt, cameraY: cameraY, formatRaceTime: formatRaceTime,
     frontTireDrop: frontTireDrop, downhillBonus: downhillBonus, rumbleSample: rumbleSample,
-    sideHeightHit: sideHeightHit, cpuWantTurbo: cpuWantTurbo
+    sideHeightHit: sideHeightHit, cpuWantTurbo: cpuWantTurbo,
+    parsePreferences: parsePreferences, serializePreferences: serializePreferences
   }
 }

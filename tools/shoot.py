@@ -16,7 +16,7 @@ SCENES = ["idle", "riding", "wheelie", "lane", "crash", "crashed", "turbo", "ove
           "ramp-up", "airborne", "cool-arrow", "boost", "land-crash",
           "big-ramp", "airborne-big", "side-crash", "pieces-overview", "mud", "giant",
           "wide-partial", "hazards", "rumble", "nose", "downhill", "ramp-climb",
-          "pieces-closeup", "finish", "ramp-top", "cpu-pack", "cpu-pass", "cpu-ramp",
+           "pieces-closeup", "finish", "results", "ramp-top", "cpu-pack", "cpu-pass", "cpu-ramp",
           "cpu-clip", "cpu-mud", "cpu-side-crash", "cpu-turbo"]
 
 app = QGuiApplication(sys.argv)

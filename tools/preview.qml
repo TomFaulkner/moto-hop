@@ -142,7 +142,23 @@ Window {
       s.lap = 2
       s.lapTime = 0.42
       s.lastLap = 61.08
+      s.raceTime = 61.5
+      s.bestTime = 60.2
       s = play(s, 4, { throttle: true })
+    } else if (name === "results") {
+      // Crossing the line on the last lap ends the race: results + a new best.
+      var line = Game.COURSE_LEN * Game.TOTAL_LAPS
+      s = place(s, 1, line - 26, Game.MAX_SPEED)
+      s.lap = Game.TOTAL_LAPS
+      s.raceStarted = true
+      s.raceTime = 214.3
+      s.lapTime = 71.9
+      s.bestTime = 219.04
+      placeCpu(s, 0, line + 40, 0, Game.MAX_SPEED)
+      placeCpu(s, 1, line - 900, 2, 100)
+      placeCpu(s, 2, line - 1400, 3, 100)
+      guard = 0
+      while (s.phase !== "finished" && guard < 60) { s = play(s, 1, { throttle: true }); guard++ }
     } else if (name === "ramp-climb") {
       // Tom's bug view: climbing the big ramp with the bypass lane beside it.
       var climb = course("ramp", "large")
