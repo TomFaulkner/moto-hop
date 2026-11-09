@@ -19,7 +19,7 @@
 var TITLE = "Moto Hop"
 // Short git SHA stamped by tools/stamp-commit.sh (and overridden at runtime
 // from the plugin checkout when git is available). Empty means "hide it".
-var BUILD_COMMIT = ""
+var BUILD_COMMIT = "1a518da"
 // Wider than NES so more of the course is on screen. Overlay and preview
 // integer-scale this canvas (nearest-neighbor) so pixels stay crisp.
 var VIEW_W = 384
