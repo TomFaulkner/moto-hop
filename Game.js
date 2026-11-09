@@ -17,6 +17,9 @@
 // See docs/track-pieces.md.
 
 var TITLE = "Moto Hop"
+// Short git SHA stamped by tools/stamp-commit.sh (and overridden at runtime
+// from the plugin checkout when git is available). Empty means "hide it".
+var BUILD_COMMIT = ""
 // Wider than NES so more of the course is on screen. Overlay and preview
 // integer-scale this canvas (nearest-neighbor) so pixels stay crisp.
 var VIEW_W = 384
@@ -1218,7 +1221,11 @@ function step(state, dt) {
   var pressedDown = inp.down && !s.prevInput.down
   var pressedCrash = inp.crash && !s.prevInput.crash
   s.prevInput = { up: inp.up, down: inp.down, crash: inp.crash }
-  if (inp.throttle || inp.turbo || s.speed > 0 || s.scrollX > 0) s.raceStarted = true
+  // Clock and CPUs wait for a real control press (not crash/debug, not coasting).
+  if (!s.raceStarted) {
+    if (inp.throttle || inp.turbo || inp.up || inp.down || inp.left || inp.right)
+      s.raceStarted = true
+  }
   s.changing = false
   s.onRumble = false
 
@@ -1270,9 +1277,11 @@ function step(state, dt) {
 
   var prevScroll = s.scrollX
   s.scrollX += s.speed * WORLD_SCALE * dt
-  if (s.raceStarted) s.raceTime += dt
-  s.lapTime += dt
-  noteFinish(s, prevScroll, dt)
+  if (s.raceStarted) {
+    s.raceTime += dt
+    s.lapTime += dt
+    noteFinish(s, prevScroll, dt)
+  }
   if (s.phase === "finished") return s
 
   if (s.phase !== "crash" && s.phase !== "overheat") {
@@ -1342,7 +1351,7 @@ function cpuPose(s, cpu) {
 
 if (typeof module !== "undefined") {
   module.exports = {
-    TITLE: TITLE, VIEW_W: VIEW_W, VIEW_H: VIEW_H, LANES: LANES, LANE_Y: LANE_Y,
+    TITLE: TITLE, BUILD_COMMIT: BUILD_COMMIT, VIEW_W: VIEW_W, VIEW_H: VIEW_H, LANES: LANES, LANE_Y: LANE_Y,
     TRACK_TOP: TRACK_TOP, LANE_H: LANE_H, SPRITE: SPRITE, RIDER: RIDER, BIKE_H: BIKE_H, CRASH_TIME: CRASH_TIME,
     CPU_COUNT: CPU_COUNT, LANE_TIME: LANE_TIME, TOTAL_LAPS: TOTAL_LAPS,
     HEAT_MAX: HEAT_MAX, HEAT_YELLOW: HEAT_YELLOW, HEAT_RED: HEAT_RED, HEAT_FLASH: HEAT_FLASH,

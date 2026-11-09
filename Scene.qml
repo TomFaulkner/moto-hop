@@ -6,6 +6,8 @@ import "Game.js" as Game
 Item {
   id: scene
   property var game: Game.initialState()
+  // Short SHA for the HUD. MotoHop overrides from git when it can.
+  property string commitHash: Game.BUILD_COMMIT || ""
   readonly property int pixelScale: Math.max(1, Math.floor(Math.min(width / Game.VIEW_W, height / Game.VIEW_H)))
   readonly property string assetDir: Qt.resolvedUrl("assets/reactorcore/")
   readonly property var sprites: ["chassis_blue.png", "chassis_red.png", "chassis_green.png",
@@ -538,9 +540,22 @@ Item {
     font.bold: true
     font.pixelSize: 9 * scene.pixelScale
     color: scene.game.phase === "overheat" ? scene.heatColor(Game.HEAT_FLASH, scene.game.t) : "#fcfcfc"
-    text: Game.TITLE.toUpperCase() + "   " + scene.hudPhase(scene.game) + "   LANE " + (scene.game.lane + 1)
+    text: Game.TITLE.toUpperCase() + "   " + scene.hudPhase(scene.game)
           + "   POS " + Game.racePosition(scene.game) + "/" + (scene.game.cpus.length + 1)
           + "   " + Math.round(scene.game.speed) + " KM/H"
+  }
+
+  Text {
+    // Upper-right blank of the top HUD row. Hidden when no hash is known.
+    id: commitHud
+    visible: !!(scene.commitHash && scene.commitHash.length)
+    x: scene.viewLeft + Game.VIEW_W * scene.pixelScale - width - 4 * scene.pixelScale
+    y: scene.viewTop + 1 * scene.pixelScale
+    font.family: "monospace"
+    font.bold: true
+    font.pixelSize: 9 * scene.pixelScale
+    color: "#a0a0a0"
+    text: scene.commitHash
   }
 
   Item {

@@ -296,5 +296,5 @@ Window {
     game = s
   }
 
-  Scene { anchors.fill: parent; game: win.game }
+  Scene { anchors.fill: parent; game: win.game; commitHash: Game.BUILD_COMMIT || "" }
 }

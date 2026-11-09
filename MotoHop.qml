@@ -18,7 +18,14 @@ Item {
   // Persisted best total race time. Negative means no time banked yet.
   property double bestTime: -1
   property bool preferencesLoaded: false
+  // Prefer a live git SHA from the plugin checkout; fall back to the stamped
+  // BUILD_COMMIT (and a build-commit file) so installed copies still show one.
+  property string commitHash: Game.BUILD_COMMIT || ""
 
+  readonly property string pluginDir: {
+    var u = Qt.resolvedUrl(".").toString()
+    return decodeURIComponent(u.replace(/^file:\/\//, "").replace(/\/$/, ""))
+  }
   readonly property string homeDir: Quickshell.env("HOME")
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (homeDir + "/.local/state")
   readonly property string stateDir: stateHome + "/moto-hop"
@@ -81,8 +88,17 @@ Item {
   function scheduleSave() {
     if (preferencesLoaded) saveTimer.restart()
   }
+  function applyCommitCandidate(raw) {
+    var h = (raw || "").toString().trim()
+    if (/^[0-9a-f]{4,12}$/i.test(h))
+      commitHash = h.substring(0, 7).toLowerCase()
+  }
 
-  Component.onCompleted: ensureStateDir.running = true
+  Component.onCompleted: {
+    ensureStateDir.running = true
+    gitRevProc.running = true
+    buildCommitFile.reload()
+  }
 
   // mkdir -p before the first read, so the path always exists when we write.
   Process {
@@ -90,6 +106,27 @@ Item {
     running: false
     command: ["mkdir", "-p", root.stateDir]
     onExited: preferencesFile.reload()
+  }
+
+  Process {
+    id: gitRevProc
+    running: false
+    command: ["git", "-C", root.pluginDir, "rev-parse", "--short=7", "HEAD"]
+    stdout: StdioCollector {
+      onStreamFinished: root.applyCommitCandidate(text)
+    }
+  }
+
+  // Stamped at build/install time when the plugin is not a git checkout.
+  FileView {
+    id: buildCommitFile
+    path: root.pluginDir + "/build-commit"
+    preload: false
+    watchChanges: false
+    printErrors: false
+    onLoaded: function() {
+      if (!root.commitHash) root.applyCommitCandidate(buildCommitFile.text())
+    }
   }
 
   FileView {
@@ -149,7 +186,7 @@ Item {
       anchors.centerIn: parent
 
       MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onClicked: keyCatcher.forceActiveFocus() }
-      Scene { anchors.fill: parent; game: root.game }
+      Scene { anchors.fill: parent; game: root.game; commitHash: root.commitHash }
 
       Item {
         id: keyCatcher

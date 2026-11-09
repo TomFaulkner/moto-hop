@@ -162,6 +162,8 @@ function place(worldX, speed, lane, extra) {
   s.laneT = 0
   s.laneY = G.LANE_Y[lane]
   s.scrollX = worldX - s.x
+  // Mid-course fixtures are already racing unless a test opts out.
+  s.raceStarted = true
   if (extra) Object.assign(s, extra)
   return s
 }
@@ -720,9 +722,50 @@ test("lap starts at 1 and the clock runs before the line", () => {
   assert.ok(s0.lastLap < 0)
   const s = run(s0, 60, { throttle: true })
   assert.equal(s.lap, 1)
+  assert.equal(s.raceStarted, true)
   assert.ok(Math.abs(s.lapTime - 1) < 0.02, "lapTime " + s.lapTime)
+  assert.ok(Math.abs(s.raceTime - 1) < 0.02, "raceTime " + s.raceTime)
   assert.ok(s.lastLap < 0)
   assert.ok(s.scrollX + s.x < G.COURSE_LEN)
+})
+
+test("clock and cpus wait until the player presses a control", () => {
+  let s = G.initialState()
+  const starts = s.cpus.map((c) => c.worldX)
+  s = run(s, 120, {})
+  assert.equal(s.raceStarted, false)
+  assert.equal(s.lapTime, 0)
+  assert.equal(s.raceTime, 0)
+  assert.deepEqual(s.cpus.map((c) => c.worldX), starts)
+  // Crash/debug alone must not arm the clock.
+  s = run(s, 10, { crash: true })
+  assert.equal(s.raceStarted, false)
+  assert.equal(s.lapTime, 0)
+  // Lean starts the race even before there is speed for a wheelie.
+  s = run(s, 1, { left: true })
+  assert.equal(s.raceStarted, true)
+  s = run(s, 59, { left: true })
+  assert.ok(Math.abs(s.lapTime - 1) < 0.02, "lapTime " + s.lapTime)
+  assert.ok(Math.abs(s.raceTime - 1) < 0.02, "raceTime " + s.raceTime)
+})
+
+test("lane or turbo also starts the clock, and restart waits again", () => {
+  let s = run(G.initialState(), 1, { down: true })
+  assert.equal(s.raceStarted, true)
+  s = run(s, 30, { down: true })
+  assert.ok(s.lapTime > 0.4)
+
+  s = run(G.initialState(), 1, { turbo: true })
+  assert.equal(s.raceStarted, true)
+
+  const fresh = G.freshRace(-1)
+  assert.equal(fresh.raceStarted, false)
+  assert.equal(fresh.lapTime, 0)
+  assert.equal(fresh.raceTime, 0)
+  const idle = run(fresh, 60, {})
+  assert.equal(idle.raceStarted, false)
+  assert.equal(idle.lapTime, 0)
+  assert.equal(idle.raceTime, 0)
 })
 
 test("crossing the finish counts one lap and stores the time", () => {

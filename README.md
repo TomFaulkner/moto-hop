@@ -38,7 +38,10 @@ it: everything freezes, a results panel shows your position out of four, the
 total race time, and the best time banked in
 `~/.local/state/moto-hop/prefs.json` (a new best is flagged). `R` restarts and
 keeps the best. The HUD counts `LAP n/3` with the current lap, the last split,
-and the best total.
+and the best total. The race clock (and the CPUs) wait until you press
+throttle, turbo, lane, or lean. The top HUD shows the short git SHA on the
+right when known (`git` in the plugin checkout, else `build-commit` /
+`BUILD_COMMIT` from `tools/stamp-commit.sh`).
 
 The HUD speed is km/h (120 cruise, 180 turbo). The track moves at 1.5 pixels
 per km/h each second. Mud and boost never cover all four lanes, and mud is
