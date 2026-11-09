@@ -213,6 +213,27 @@ Window {
       placeCpu(s, 1, cpuMud.x + 18, cpuMud.lanes[0], Game.MAX_SPEED)
       hideOtherCpus(s, 1)
       s = play(s, 8, { throttle: true })
+    } else if (name === "cpu-side-crash") {
+      // Red rider mid lane-change into the large ramp's side face.
+      var sideWall = course("ramp", "large")
+      var sideMid = sideWall.spans[0].x1 * 0.55
+      s = place(s, 3, sideWall.x + sideMid - 40, 40)
+      placeCpu(s, 0, sideWall.x + sideMid, 0, 70)
+      s.cpus[0].laneFrom = 0
+      s.cpus[0].laneTo = 1
+      s.cpus[0].laneT = Game.LANE_TIME * 0.45
+      s.cpus[0].changing = true
+      hideOtherCpus(s, 0)
+      s = play(s, 1, {})
+      s = play(s, 18, {})
+    } else if (name === "cpu-turbo") {
+      // Green rider on the opening straight with turbo lit and heat climbing.
+      s = place(s, 2, 520, 100)
+      placeCpu(s, 1, 600, 0, Game.TURBO_SPEED)
+      s.cpus[1].heat = 48
+      s.cpus[1].turboing = true
+      hideOtherCpus(s, 1)
+      s = play(s, 8, { throttle: true })
     } else if (name === "land-crash") {
       // Nose-down into the gentle ramp's flat and tumble while the wedge is still visible.
       var lip = course("ramp", "large")

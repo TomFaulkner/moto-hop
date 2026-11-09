@@ -292,7 +292,8 @@ function makeCpu(id) {
     id: id, lane: lane, laneY: LANE_Y[lane], worldX: start,
     speed: 0, targetSpeed: cruise, wheelAngle: 0,
     height: 0, vy: 0, air: false, tilt: 0,
-    phase: "riding", crashT: 0, contactT: 0,
+    phase: "riding", crashT: 0, contactT: 0, overheatT: 0,
+    heat: 0, turboing: false,
     laneFrom: lane, laneTo: lane, laneT: 0, changing: false,
     palette: id, mudSkill: [0.9, 0.15, 0.75, 0.55][id],
     onPiece: null, onRumble: false, boostT: 0, boostHeld: false
@@ -631,17 +632,19 @@ function beginCrash(s) {
 // While a lane change is in progress, the two lanes have to offer about the
 // same surface. Merging into a face above the wheels, or leaving one for an
 // empty lane, is the tumble. A change that ends before the piece never sees it.
-function checkSide(s, world) {
+function sideHeightHit(s, world) {
   if (!s.changing || s.air) return false
   var fromS = surfaceAt(world, s.laneFrom)
   var toS = surfaceAt(world, s.laneTo)
   var fromH = fromS ? fromS.height : 0
   var toH = toS ? toS.height : 0
-  if (toH > fromH + SIDE_HIT || fromH > toH + SIDE_HIT) {
-    beginCrash(s)
-    return true
-  }
-  return false
+  return toH > fromH + SIDE_HIT || fromH > toH + SIDE_HIT
+}
+
+function checkSide(s, world) {
+  if (!sideHeightHit(s, world)) return false
+  beginCrash(s)
+  return true
 }
 
 function enterOverheat(s) {
@@ -719,11 +722,15 @@ function land(s, ground, noCrash) {
   s.tilt = slope
 }
 
-function interactTrackWorld(s, x0, x1, dt, noCrash) {
+function interactTrackWorld(s, x0, x1, dt, noCrash, sideCrash) {
   var lane = activeLane(s)
 
   // Before the new lane's surface can catch the wheels.
-  if (!noCrash && checkSide(s, x1)) return
+  // sideCrash lets CPUs tumble on ramp sides while keeping soft landings.
+  if (sideHeightHit(s, x1)) {
+    if (typeof sideCrash === "function") { sideCrash(s); return }
+    if (!noCrash) { beginCrash(s); return }
+  }
 
   if (s.air) {
     s.vy -= GRAVITY * dt
@@ -851,6 +858,7 @@ function beginCpuCrash(cpu) {
   cpu.speed = 0
   cpu.laneT = 0
   cpu.changing = false
+  cpu.turboing = false
   cpu.lane = cpu.laneTo
   cpu.laneFrom = cpu.lane
   cpu.laneY = LANE_Y[cpu.lane]
@@ -858,17 +866,73 @@ function beginCpuCrash(cpu) {
   clearAerial(cpu)
 }
 
+function beginCpuOverheat(cpu) {
+  cpu.phase = "overheat"
+  cpu.overheatT = 0
+  cpu.heat = HEAT_MAX
+  cpu.turboing = false
+  cpu.laneT = 0
+  cpu.changing = false
+  clearAerial(cpu)
+}
+
+// Turbo on open straights. Ease off before raised pieces and hazards.
+// Catch-up and a cool arrow ahead let them push closer to the redline and
+// occasionally misjudge into an overheat.
+function cpuWantTurbo(s, cpu) {
+  if (cpu.air || cpu.onPiece != null || cpu.onRumble) return false
+  if (cpu.phase !== "riding") return false
+  var lane = activeLane(cpu)
+  if (stripAt(cpu.worldX, lane, "mud")) return false
+  if (stripAt(cpu.worldX, lane, "grass")) return false
+  if (stripAt(cpu.worldX, lane, "rumble")) return false
+  var coolAhead = false
+  for (var d = 0; d <= 150; d += 30) {
+    if (surfaceAt(cpu.worldX + d, lane)) return false
+    if (stripAt(cpu.worldX + d, lane, "cool")) coolAhead = true
+  }
+  var gap = cpu.worldX - (s.scrollX + s.x)
+  var chasing = gap < -VIEW_W * 1.2
+  // Catch-up redlines (cut at HEAT_MAX) so a long chase can overheat.
+  var cut = chasing ? HEAT_MAX : (coolAhead ? 98 : 82)
+  var startAt = chasing ? 70 : 55
+  if (cpu.turboing) return cpu.heat < cut
+  return cpu.heat < startAt
+}
+
 function updateCpu(s, cpu, dt) {
   cpu.changing = false
   cpu.onRumble = false
   if (cpu.phase === "crashed") {
     cpu.speed = 0
+    cpu.turboing = false
     cpu.crashT += dt
     if (cpu.crashT >= CRASH_TIME) {
       cpu.phase = "riding"
       cpu.crashT = 0
       cpu.contactT = CPU_RECOVER_GRACE
       cpu.tilt = 0
+    }
+    return
+  }
+
+  if (cpu.phase === "overheat") {
+    cpu.turboing = false
+    cpu.overheatT += dt
+    if (cpu.overheatT >= OVERHEAT_TIME - 1e-4) {
+      cpu.phase = "riding"
+      cpu.overheatT = 0
+      cpu.heat = 0
+      cpu.tilt = 0
+    } else {
+      cpu.heat = HEAT_MAX * (1 - cpu.overheatT / OVERHEAT_TIME)
+      cpu.speed = approach(cpu.speed, 0, OVERHEAT_DECEL * dt)
+      cpu.tilt = approach(cpu.tilt, 0, TILT_RATE * dt)
+      advanceLane(cpu, dt, false, false, false)
+      var prevOh = cpu.worldX
+      cpu.worldX += cpu.speed * WORLD_SCALE * dt
+      interactTrackWorld(cpu, prevOh, cpu.worldX, dt, true, beginCpuCrash)
+      cpu.wheelAngle += cpu.speed * WORLD_SCALE * dt / SPRITE.wheelR
     }
     return
   }
@@ -886,22 +950,39 @@ function updateCpu(s, cpu, dt) {
         cpu.changing = true
       }
     }
+    // Ground pitch from the track overrides this after interactTrackWorld.
     cpu.tilt = approach(cpu.tilt, 0, TILT_RATE * dt)
-    if (cpu.boostT > 0) {
-      cpu.boostT = Math.max(0, cpu.boostT - dt)
-      cpu.speed = approach(cpu.speed, BOOST_SPEED, BOOST_ACCEL * dt)
+  }
+
+  if (cpu.air) {
+    cpu.turboing = false
+    cpu.heat = Math.max(0, cpu.heat - AIR_COOL_RATE * dt)
+  } else if (cpu.boostT > 0) {
+    cpu.boostT = Math.max(0, cpu.boostT - dt)
+    cpu.turboing = false
+    cpu.speed = approach(cpu.speed, BOOST_SPEED, BOOST_ACCEL * dt)
+    cpu.heat = Math.max(0, cpu.heat - HEAT_COOL * dt)
+  } else {
+    cpu.turboing = cpuWantTurbo(s, cpu)
+    if (cpu.turboing) {
+      cpu.speed = approach(cpu.speed, TURBO_SPEED, TURBO_ACCEL * dt)
+      cpu.heat = Math.min(HEAT_MAX, cpu.heat + HEAT_RISE * dt)
     } else {
       cpu.speed = approach(cpu.speed, cpuCruiseTarget(s, cpu), ACCEL * dt)
+      cpu.heat = Math.max(0, cpu.heat - HEAT_COOL * dt)
     }
   }
 
   var prevWorld = cpu.worldX
   cpu.worldX += cpu.speed * WORLD_SCALE * dt
-  interactTrackWorld(cpu, prevWorld, cpu.worldX, dt, true)
+  interactTrackWorld(cpu, prevWorld, cpu.worldX, dt, true, beginCpuCrash)
+  if (cpu.phase === "crashed") return
   if (!cpu.air) {
+    if (stripAt(cpu.worldX, activeLane(cpu), "cool")) cpu.heat = 0
     applyBoostAt(cpu, cpu.worldX)
     applyTerrainAt(cpu, cpu.worldX, dt)
   }
+  if (cpu.heat >= HEAT_MAX) beginCpuOverheat(cpu)
   cpu.wheelAngle += cpu.speed * WORLD_SCALE * dt / SPRITE.wheelR
 }
 
@@ -1133,6 +1214,7 @@ if (typeof module !== "undefined") {
     riderPose: riderPose, racePosition: racePosition,
     courseFeature: courseFeature, rampHeight: rampHeight, rampSlope: rampSlope,
     surfaceAt: surfaceAt, cameraY: cameraY, formatRaceTime: formatRaceTime,
-    frontTireDrop: frontTireDrop, downhillBonus: downhillBonus, rumbleSample: rumbleSample
+    frontTireDrop: frontTireDrop, downhillBonus: downhillBonus, rumbleSample: rumbleSample,
+    sideHeightHit: sideHeightHit, cpuWantTurbo: cpuWantTurbo
   }
 }

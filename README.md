@@ -28,6 +28,11 @@ the side, or off the side of one, tumbles. Partial raised pieces draw a side
 face. The course is a loop of these pieces. A checkered line marks the start of each lap, and the HUD shows the lap, the time on this lap, and the last lap time. See `docs/track-pieces.md`.
 Shapes follow the nesmaps.com Excitebike sheet; the pixels are ours.
 
+CPU riders share the player's side-crash rule on ramp edges, recover after
+1.5s, and use turbo on open straights while managing their own heat (they can
+overheat and stall if they redline while catching up). Cooling arrows zero
+their heat too.
+
 The HUD speed is km/h (120 cruise, 180 turbo). The track moves at 1.5 pixels
 per km/h each second. Mud and boost never cover all four lanes, and mud is
 short. Grass or mud after a ramp sits in the landing and the bypass, so a
