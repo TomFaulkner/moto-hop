@@ -76,6 +76,9 @@ var NOSE_DEG = 12
 var TILT_RATE = 120
 var LANE_TIME = 0.25
 var CRASH_TIME = 1.5
+var SPAWN_CLEAR = 16       // px past a solid after crash recovery
+var SPAWN_GRACE = 0.75     // seconds walls/sides are ignored after respawn
+var STUCK_FORCE = 3        // force upright if crash/overheat lasts this long
 var CPU_COUNT = 3
 var CPU_LOOKAHEAD = 90
 // A race is three laps of COURSE_LEN. Crossing the line on the last lap ends it.
@@ -362,7 +365,8 @@ function makeCpu(id) {
     heat: 0, turboing: false,
     laneFrom: lane, laneTo: lane, laneT: 0, changing: false,
     palette: id, mudSkill: [0.9, 0.15, 0.75, 0.55][id],
-    onPiece: null, onRumble: false, boostT: 0, boostHeld: false
+    onPiece: null, onRumble: false, boostT: 0, boostHeld: false,
+    spawnGrace: 0, stuckT: 0
   }
 }
 
@@ -378,7 +382,7 @@ function initialState(cpuCount) {
     smoke: [], smokeT: 0, puffN: 0, cpus: cpus,
     crashT: 0, crashY: null, laneFrom: 1, laneTo: 1, laneT: 0, changing: false,
     air: false, height: 0, vy: 0, onPiece: null, onRumble: false,
-    boostT: 0, boostHeld: false,
+    boostT: 0, boostHeld: false, spawnGrace: 0, stuckT: 0,
     lap: 1, lapTime: 0, lastLap: -1,
     raceTime: 0, finishTime: -1, finishPosition: 0,
     bestTime: -1, newBest: false,
@@ -696,6 +700,28 @@ function rumbleSample(rel) {
   return { h: Math.round(t * RUMBLE_H), rising: rising }
 }
 
+function riderWorldX(s) {
+  return s.worldX != null ? s.worldX : s.scrollX + s.x
+}
+
+function setRiderWorldX(s, wx) {
+  if (s.worldX != null) s.worldX = wx
+  else s.scrollX = wx - s.x
+}
+
+// After a tumble, never stand inside a solid. Nudge past the wall (or any
+// overlapping solid) so the next interactTrack cannot re-crash immediately.
+function clearOfSolid(s) {
+  var lane = activeLane(s)
+  var wx = riderWorldX(s)
+  var wall = wallAt(wx, lane)
+  if (wall) {
+    setRiderWorldX(s, wall.x + wall.len + SPAWN_CLEAR)
+    return true
+  }
+  return false
+}
+
 function recover(s) {
   s.phase = "idle"
   s.overheatT = 0
@@ -703,10 +729,15 @@ function recover(s) {
   s.speed = 0
   s.tilt = 0
   s.laneT = 0
+  s.changing = false
   s.lane = s.laneTo
   s.laneY = LANE_Y[s.lane]
   s.crashY = null
+  s.crashT = 0
+  s.stuckT = 0
   clearAerial(s)
+  clearOfSolid(s)
+  s.spawnGrace = SPAWN_GRACE
 }
 
 function beginCrash(s) {
@@ -719,6 +750,10 @@ function beginCrash(s) {
   s.lane = s.laneTo
   s.laneY = LANE_Y[s.lane]
   clearAerial(s)
+}
+
+function finishCrash(s) {
+  recover(s)
 }
 
 // While a lane change is in progress, the two lanes have to offer about the
@@ -825,13 +860,14 @@ function interactTrackWorld(s, x0, x1, dt, noCrash, sideCrash) {
 
   // Before the new lane's surface can catch the wheels.
   // sideCrash lets CPUs tumble on ramp sides while keeping soft landings.
-  if (sideHeightHit(s, x1)) {
+  var grace = (s.spawnGrace || 0) > 0
+  if (!grace && sideHeightHit(s, x1)) {
     if (crashRider(s, noCrash, sideCrash)) return
   }
 
   // Solid walls: wheelie or jump, else tumble. Checked at the new x.
   var wall = wallAt(x1, lane)
-  if (wall && !clearsWall(s, wall)) {
+  if (!grace && wall && !clearsWall(s, wall)) {
     if (crashRider(s, noCrash, sideCrash)) return
   }
 
@@ -1009,6 +1045,22 @@ function cpuWantTurbo(s, cpu) {
 function updateCpu(s, cpu, dt) {
   cpu.changing = false
   cpu.onRumble = false
+  cpu.spawnGrace = Math.max(0, (cpu.spawnGrace || 0) - dt)
+  if (cpu.phase === "crashed" || cpu.phase === "overheat") {
+    cpu.stuckT = (cpu.stuckT || 0) + dt
+    if (cpu.stuckT >= STUCK_FORCE && cpu.phase === "crashed") {
+      cpu.phase = "riding"
+      cpu.crashT = 0
+      cpu.contactT = CPU_RECOVER_GRACE
+      cpu.tilt = 0
+      cpu.stuckT = 0
+      clearOfSolid(cpu)
+      cpu.spawnGrace = SPAWN_GRACE
+      return
+    }
+  } else {
+    cpu.stuckT = 0
+  }
   if (cpu.phase === "crashed") {
     cpu.speed = 0
     cpu.turboing = false
@@ -1018,6 +1070,9 @@ function updateCpu(s, cpu, dt) {
       cpu.crashT = 0
       cpu.contactT = CPU_RECOVER_GRACE
       cpu.tilt = 0
+      cpu.stuckT = 0
+      clearOfSolid(cpu)
+      cpu.spawnGrace = SPAWN_GRACE
     }
     return
   }
@@ -1229,21 +1284,24 @@ function step(state, dt) {
   s.changing = false
   s.onRumble = false
 
+  s.spawnGrace = Math.max(0, (s.spawnGrace || 0) - dt)
+
+  if (s.phase === "crash" || s.phase === "overheat") {
+    s.stuckT = (s.stuckT || 0) + dt
+  } else {
+    s.stuckT = 0
+  }
+
   if (s.phase === "crash") {
     s.crashT += dt
     s.speed = approach(s.speed, 0, 300 * dt)
-    if (s.crashT >= CRASH_TIME) {
-      s.phase = "idle"
-      s.crashT = 0
-      s.tilt = 0
-      s.speed = 0
-      s.crashY = null
-      clearAerial(s)
+    if (s.crashT >= CRASH_TIME || s.stuckT >= STUCK_FORCE) {
+      finishCrash(s)
     }
   } else if (s.phase === "overheat") {
     // Inputs are ignored until the meter drains. 1e-4 absorbs 1/60 summation dust.
     s.overheatT += dt
-    if (s.overheatT >= OVERHEAT_TIME - 1e-4) {
+    if (s.overheatT >= OVERHEAT_TIME - 1e-4 || s.stuckT >= STUCK_FORCE) {
       recover(s)
     } else {
       s.heat = HEAT_MAX * (1 - s.overheatT / OVERHEAT_TIME)
@@ -1352,7 +1410,7 @@ function cpuPose(s, cpu) {
 if (typeof module !== "undefined") {
   module.exports = {
     TITLE: TITLE, BUILD_COMMIT: BUILD_COMMIT, VIEW_W: VIEW_W, VIEW_H: VIEW_H, LANES: LANES, LANE_Y: LANE_Y,
-    TRACK_TOP: TRACK_TOP, LANE_H: LANE_H, SPRITE: SPRITE, RIDER: RIDER, BIKE_H: BIKE_H, CRASH_TIME: CRASH_TIME,
+    TRACK_TOP: TRACK_TOP, LANE_H: LANE_H, SPRITE: SPRITE, RIDER: RIDER, BIKE_H: BIKE_H, CRASH_TIME: CRASH_TIME, SPAWN_CLEAR: SPAWN_CLEAR, SPAWN_GRACE: SPAWN_GRACE, STUCK_FORCE: STUCK_FORCE,
     CPU_COUNT: CPU_COUNT, LANE_TIME: LANE_TIME, TOTAL_LAPS: TOTAL_LAPS,
     HEAT_MAX: HEAT_MAX, HEAT_YELLOW: HEAT_YELLOW, HEAT_RED: HEAT_RED, HEAT_FLASH: HEAT_FLASH,
     OVERHEAT_TIME: OVERHEAT_TIME, MAX_SPEED: MAX_SPEED, TURBO_SPEED: TURBO_SPEED,
@@ -1372,7 +1430,7 @@ if (typeof module !== "undefined") {
     courseFeature: courseFeature, rampHeight: rampHeight, rampSlope: rampSlope,
     surfaceAt: surfaceAt, wallAt: wallAt, clearsWall: clearsWall, cameraY: cameraY, formatRaceTime: formatRaceTime,
     frontTireDrop: frontTireDrop, downhillBonus: downhillBonus, rumbleSample: rumbleSample,
-    sideHeightHit: sideHeightHit, cpuWantTurbo: cpuWantTurbo,
+    sideHeightHit: sideHeightHit, cpuWantTurbo: cpuWantTurbo, clearOfSolid: clearOfSolid, finishCrash: finishCrash,
     WALL_SPEC: WALL_SPEC, STEP_SPEC: STEP_SPEC, WASH_SPEC: WASH_SPEC,
     parsePreferences: parsePreferences, serializePreferences: serializePreferences
   }

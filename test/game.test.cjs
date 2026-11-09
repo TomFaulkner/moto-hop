@@ -1327,3 +1327,105 @@ test("cpu steers around a wall in its lane", () => {
   assert.ok(wall.lanes.indexOf(s.cpus[0].lane) < 0 || s.cpus[0].worldX < wall.x,
     "cpu lane " + s.cpus[0].lane + " wx " + s.cpus[0].worldX)
 })
+
+
+test("low-speed wall crash recovers clear of the wall, not on top of it", () => {
+  const wall = feature("wall", "low")
+  let s = place(wall.x - 8, 40, wall.lanes[0])
+  let crashes = 0
+  let recovered = false
+  for (let i = 0; i < 400; i++) {
+    const prev = s.phase
+    s = run(s, 1, { throttle: true })
+    if (s.phase === "crash" && prev !== "crash") crashes++
+    if (prev === "crash" && s.phase !== "crash") {
+      recovered = true
+      const wx = s.scrollX + s.x
+      assert.ok(!G.wallAt(wx, s.lane), "still on wall at " + wx)
+      assert.ok(wx >= wall.x + wall.len + G.SPAWN_CLEAR - 0.01, "wx " + wx)
+      assert.ok((s.spawnGrace || 0) > 0, "expected spawn grace")
+      assert.equal(s.tilt, 0)
+      break
+    }
+  }
+  assert.equal(crashes, 1, "crash count " + crashes)
+  assert.ok(recovered, "never recovered")
+  // Keep holding throttle through grace: must not re-crash on the same wall.
+  const after = s.scrollX + s.x
+  s = run(s, Math.ceil(G.SPAWN_GRACE * 60) + 10, { throttle: true })
+  assert.notEqual(s.phase, "crash")
+  assert.ok(s.scrollX + s.x > after)
+})
+
+test("low-speed wheelie into a low wall either clears or tumbles then recovers", () => {
+  const wall = feature("wall", "low")
+  let s = place(wall.x - 20, 35, wall.lanes[0], { tilt: -10 })
+  let wallCrashes = 0
+  let passed = false
+  for (let i = 0; i < 300; i++) {
+    const prev = s.phase
+    const prevX = s.scrollX + s.x
+    s = run(s, 1, { throttle: true, left: true })
+    const wx = s.scrollX + s.x
+    if (s.phase === "crash" && prev !== "crash") {
+      // Only count crashes that begin on/near this wall.
+      if (prevX >= wall.x - 20 && prevX <= wall.x + wall.len + 8) wallCrashes++
+    }
+    if (prev === "crash" && s.phase !== "crash" && wallCrashes > 0) {
+      assert.ok(!G.wallAt(wx, s.lane), "recovered on the wall at " + wx)
+      assert.ok(wx >= wall.x + wall.len)
+      // Same wall must not re-trigger during grace.
+      s = run(s, Math.ceil(G.SPAWN_GRACE * 60) + 2, { throttle: true, left: true })
+      assert.ok(wallCrashes === 1, "re-crashed the same wall")
+      passed = true
+      break
+    }
+    if (wx > wall.x + wall.len + 4 && wallCrashes === 0 && s.phase !== "crash") {
+      // Cleared with the wheelie.
+      passed = true
+      break
+    }
+  }
+  assert.ok(passed, "neither cleared nor recovered past the wall")
+  assert.ok(wallCrashes <= 1, "soft-locked on wall crashes=" + wallCrashes)
+})
+
+test("low-speed hit on a half-lane barrier tumbles then recovers past it", () => {
+  const bar = feature("wall", "barrier")
+  let s = place(bar.x - 8, 40, bar.lanes[0])
+  let crashes = 0
+  let cleared = false
+  for (let i = 0; i < 400; i++) {
+    const prev = s.phase
+    s = run(s, 1, { throttle: true })
+    if (s.phase === "crash" && prev !== "crash") crashes++
+    if (prev === "crash" && s.phase !== "crash") {
+      const wx = s.scrollX + s.x
+      assert.ok(!G.wallAt(wx, s.lane), "respawned on barrier at " + wx)
+      assert.ok(wx >= bar.x + bar.len + G.SPAWN_CLEAR - 0.01)
+      cleared = true
+      break
+    }
+  }
+  assert.equal(crashes, 1)
+  assert.ok(cleared)
+  s = run(s, Math.ceil(G.SPAWN_GRACE * 60) + 5, { throttle: true })
+  assert.notEqual(s.phase, "crash")
+})
+
+test("stuck crash safety net forces an upright clear respawn", () => {
+  const wall = feature("wall", "low")
+  let s = place(wall.x + 2, 0, wall.lanes[0])
+  // Force a crash on the wall, then pin crashT so the normal timer never fires,
+  // and let stuckT trip the safety net.
+  s = run(s, 1, { throttle: true })
+  assert.equal(s.phase, "crash")
+  for (let i = 0; i < Math.ceil(G.STUCK_FORCE * 60) + 2; i++) {
+    // Keep crashT low so only stuckT can free us.
+    if (s.phase === "crash") s.crashT = 0
+    s = run(s, 1, {})
+  }
+  assert.notEqual(s.phase, "crash")
+  assert.ok(!G.wallAt(s.scrollX + s.x, s.lane))
+  assert.equal(s.tilt, 0)
+})
