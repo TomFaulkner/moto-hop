@@ -357,6 +357,36 @@ Item {
       }
     }
 
+    // Solid low wall / barrier plank. Not a rideable face — wheelie or jump.
+    function drawWall(ctx, f, sx0, lane, cam) {
+      var base = Game.LANE_Y[lane] + cam
+      var x0 = Math.round(sx0)
+      var w = Math.max(4, Math.round(f.len || 14))
+      var h = Math.max(8, Math.round(f.h || 12))
+      var top = Math.round(base) - h
+      var nearOpen = !laneHas(f, lane + 1)
+      // Plank body
+      ctx.fillStyle = "#3a2414"
+      ctx.fillRect(x0, top, w, h)
+      ctx.fillStyle = "#6a4020"
+      ctx.fillRect(x0, top, w, 2)
+      ctx.fillStyle = "#1a1008"
+      ctx.fillRect(x0, top + h - 2, w, 2)
+      // Vertical posts
+      ctx.fillStyle = "#24180c"
+      ctx.fillRect(x0, top, 2, h)
+      ctx.fillRect(x0 + w - 2, top, 2, h)
+      // Checker / stripe so it reads as a barrier, not dirt
+      for (var y = top + 3; y < top + h - 3; y += 4) {
+        ctx.fillStyle = ((y - top) & 4) ? "#c4a060" : "#2a1c10"
+        ctx.fillRect(x0 + 3, y, Math.max(1, w - 6), 2)
+      }
+      if (nearOpen) {
+        ctx.fillStyle = "#140c08"
+        ctx.fillRect(x0, top + 2, 1, h - 2)
+      }
+    }
+
     // Checkered banner on course x = 0, once per lap, across every lane.
     function drawFinishLine(ctx, scroll, cam) {
       var cycle = Game.COURSE_LEN
@@ -397,7 +427,8 @@ Item {
             var lane = order[oi]
             if (lane < 0 || lane >= Game.LANES) continue
             var base = Game.LANE_Y[lane] + cam
-            if (f.spans && f.spans.length) drawRaisedLane(ctx, f, sx0, lane, cam)
+            if (f.type === "wall") drawWall(ctx, f, sx0, lane, cam)
+            else if (f.spans && f.spans.length) drawRaisedLane(ctx, f, sx0, lane, cam)
             else if (f.type === "cool") drawCool(ctx, sx0, f.len, base)
             else if (f.type === "boost") drawBoost(ctx, sx0, f.len, base)
             else if (f.type === "mud") drawMud(ctx, sx0, f.len, base)

@@ -229,6 +229,33 @@ Window {
       placeCpu(s, 1, cpuMud.x + 18, cpuMud.lanes[0], Game.MAX_SPEED)
       hideOtherCpus(s, 1)
       s = play(s, 8, { throttle: true })
+    } else if (name === "wall-hit") {
+      var low = course("wall", "low")
+      s = place(s, low.lanes[0], low.x - 30, 90)
+      s = play(s, 1, { throttle: true })
+      guard = 0
+      while (s.phase !== "crash" && guard < 40) { s = play(s, 1, { throttle: true }); guard++ }
+      if (s.phase === "crash") s = play(s, 10, {})
+    } else if (name === "wall-wheelie") {
+      var lowW = course("wall", "low")
+      s = place(s, lowW.lanes[0], lowW.x - 50, 100)
+      s = play(s, 12, { throttle: true, left: true })
+      guard = 0
+      while (s.scrollX + s.x < lowW.x + lowW.len + 20 && s.phase !== "crash" && guard < 60) {
+        s = play(s, 1, { throttle: true, left: true }); guard++
+      }
+    } else if (name === "barrier") {
+      var bar = course("wall", "barrier")
+      s = place(s, bar.lanes[0], bar.x - 80, 110)
+      s = play(s, 1, { throttle: true })
+    } else if (name === "step") {
+      var st = course("step", "short")
+      s = place(s, st.lanes[0], st.x + 40, 90)
+      s = play(s, 1, { throttle: true })
+    } else if (name === "wash") {
+      var wash = course("wash", "triple")
+      s = place(s, wash.lanes[0], wash.x + 20, 70)
+      s = play(s, 4, { throttle: true })
     } else if (name === "cpu-side-crash") {
       // Red rider mid lane-change into the large ramp's side face.
       var sideWall = course("ramp", "large")

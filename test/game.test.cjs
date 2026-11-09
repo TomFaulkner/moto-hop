@@ -1198,3 +1198,89 @@ test("cpu that pushes turbo to 100 overheats, stalls, and recovers", () => {
   assert.ok(s.cpus[0].speed > 0)
   assert.ok(s.cpus[0].worldX > stopped)
 })
+
+
+test("low wall crashes without a wheelie and clears with one", () => {
+  const wall = feature("wall", "low")
+  assert.ok(wall)
+  assert.ok(wall.h >= 8)
+  let s = place(wall.x - 20, 100, wall.lanes[0], { raceStarted: true })
+  let guard = 0
+  while (s.phase !== "crash" && guard < 60) {
+    s = run(s, 1, { throttle: true })
+    guard++
+  }
+  assert.equal(s.phase, "crash", "expected tumble into the wall")
+
+  s = place(wall.x - 40, 110, wall.lanes[0], { raceStarted: true, tilt: G.WHEELIE_DEG })
+  // Hold wheelie across the wall.
+  guard = 0
+  while (s.scrollX + s.x < wall.x + wall.len + 10 && s.phase !== "crash" && guard < 90) {
+    s = run(s, 1, { throttle: true, left: true })
+    guard++
+  }
+  assert.notEqual(s.phase, "crash", "wheelie should clear the low wall")
+  assert.ok(s.scrollX + s.x > wall.x + wall.len)
+})
+
+test("barrier needs a jump and an open lane misses it", () => {
+  const bar = feature("wall", "barrier")
+  assert.ok(bar.clearHeight > 10)
+  let s = place(bar.x - 16, 100, bar.lanes[0], { raceStarted: true })
+  let guard = 0
+  while (s.phase !== "crash" && guard < 40) {
+    s = run(s, 1, { throttle: true })
+    guard++
+  }
+  assert.equal(s.phase, "crash")
+
+  const open = [0, 1, 2, 3].find((l) => bar.lanes.indexOf(l) < 0)
+  assert.ok(open != null)
+  s = place(bar.x - 16, 100, open, { raceStarted: true })
+  s = run(s, 40, { throttle: true })
+  assert.notEqual(s.phase, "crash")
+  assert.ok(s.scrollX + s.x > bar.x + bar.len)
+})
+
+test("downward step is rideable and launches off the cliff", () => {
+  const st = feature("step", "short")
+  assert.ok(st.spans.length >= 2)
+  assert.ok(st.peak > 20)
+  const end = st.spans[st.spans.length - 1]
+  assert.ok(end.y1 > 5)
+  let s = place(st.x + st.len - 4, 110, st.lanes[0], { raceStarted: true })
+  let guard = 0
+  while (!s.air && guard < 40) {
+    s = run(s, 1, { throttle: true })
+    guard++
+  }
+  assert.equal(s.air, true, "expected launch off the step")
+  assert.ok(s.vy > 0)
+})
+
+test("washboard jolts across three tiny mounds", () => {
+  const wash = feature("wash", "triple")
+  assert.ok(wash.spans.length >= 6)
+  let s = place(wash.x + 4, 80, wash.lanes[0], { raceStarted: true })
+  let maxH = 0
+  for (let i = 0; i < 80; i++) {
+    s = run(s, 1, { throttle: true })
+    if ((s.height || 0) > maxH) maxH = s.height
+    if (s.scrollX + s.x > wash.x + wash.len) break
+  }
+  assert.ok(maxH >= 5, "max height " + maxH)
+  assert.notEqual(s.phase, "crash")
+})
+
+test("cpu steers around a wall in its lane", () => {
+  const wall = feature("wall", "low")
+  const open = [0, 1, 2, 3].find((l) => wall.lanes.indexOf(l) < 0)
+  assert.ok(open != null)
+  let s = place(wall.x - 500, 0, 3, { raceStarted: true })
+  placeCpu(s, 0, wall.x - 80, wall.lanes[0], 100)
+  s.cpus[0].heat = 90
+  s = run(s, Math.ceil(G.LANE_TIME * 60) + 8, {})
+  assert.notEqual(s.cpus[0].phase, "crashed")
+  assert.ok(wall.lanes.indexOf(s.cpus[0].lane) < 0 || s.cpus[0].worldX < wall.x,
+    "cpu lane " + s.cpus[0].lane + " wx " + s.cpus[0].worldX)
+})

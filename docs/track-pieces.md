@@ -72,6 +72,9 @@ pass under the HUD, so a 3.5-bike table and the air above it stay in the
 | Hurdle R | 208×96 | Long up, long plateau, steep drop. About 3–4 bikes. | Full | Land on top, or launch off the end | `table` `giant` |
 | Hurdle S | 216×96 | Up to a lip, gap with humps below, down-slope landing. | Full | Double jump | `double` |
 | Rough run | — | Series of tiny teeth, like hurdles I and J repeated. | Partial | Jolt and slow | `rumble` |
+| (ours) | — | Short curb then cliff | Partial | Launch off the lip | `step` |
+| (ours) | — | Triple tiny mounds | Partial | Rideable washboard | `wash` |
+| (ours) | — | Low plank barrier | Partial | Wheelie or jump, else tumble | `wall` `low` / `barrier` |
 
 `boost` is ours, not an NES piece: a one-second burst above the turbo cap that adds no heat (`ENABLE_BOOST_STRIPS`). It is partial-lane, something you steer into. `rumble` is the washboard: our pixels, the repeated-bump idea from the NES rough sections.
 
@@ -96,5 +99,10 @@ Heights are the peak above the lane. Angles are the face angle.
 | `rumble` | 6px teeth | 12px tooth, partial lanes | Rear wheel bounces. Nose kicks up on the rise. Speed falls to 64. |
 | `cool` | 0 | Chevrons on the listed lanes | Heat to 0. Other lanes ignore it. |
 | `boost` | 0 | Hazard stripes, partial lanes | One second at 250, no heat. Ignored when the flag is off. |
+| `step` `short` | 32px | Up 48, plateau 56, cliff | Curb launch / downward step. |
+| `step` `long` | 40px | Up 60, plateau 120, cliff | Longer deck before the drop. |
+| `wash` `triple` | 7px | Three tiny up/down pulses | Rideable washboard of mounds. |
+| `wall` `low` | 12px plank | Solid, not rideable | Clears with a wheelie (tilt ≤ −18°) or a short hop. |
+| `wall` `barrier` | 22px plank | Solid, not rideable, partial lanes | Needs a jump (or a deep wheelie); open lane bypasses. |
 
 Course entries are `{type, x, lanes, size?, len?}`. Raised pieces take `len` from the profile. Strips set `len` themselves. Nothing crosses the `COURSE_LEN` seam. The first piece is past the run the turbo and overheat tests travel from a standing start.

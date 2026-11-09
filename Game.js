@@ -192,6 +192,31 @@ var BUMP_SPEC = {
   tiny:  { kick: 12, spans: [span(40, 0, 8), span(40, 8, 0)] }
 }
 
+// Short rise, short deck, cliff. A curb / downward step you launch off.
+var STEP_SPEC = {
+  short: { kick: 55, spans: [span(48, 0, 32), span(56, 32, 32)] },
+  long:  { kick: 60, spans: [span(60, 0, 40), span(120, 40, 40)] }
+}
+
+// Three tiny mounds in a row — a washboard of rideable bumps.
+var WASH_SPEC = {
+  triple: {
+    kick: 10,
+    spans: [
+      span(28, 0, 7), span(28, 7, 0),
+      span(28, 0, 7), span(28, 7, 0),
+      span(28, 0, 7), span(28, 7, 0)
+    ]
+  }
+}
+
+// Solid barriers, not rideable faces. Clear with a wheelie (tilt <= clearTilt)
+// or by jumping over (air height >= clearHeight). Otherwise tumble.
+var WALL_SPEC = {
+  low:     { h: 12, w: 14, clearTilt: -18, clearHeight: 6 },
+  barrier: { h: 22, w: 18, clearTilt: -22, clearHeight: 14 }
+}
+
 // Looping test track. Raised pieces take their length from the profile.
 // Strips are {type, x, len, lanes}. Keep x >= 0 and x + len <= COURSE_LEN.
 // The first feature sits past the standing turbo run. World motion is
@@ -222,6 +247,16 @@ var COURSE = [
   { type: "mud", x: 3164, len: 64, lanes: [1, 2, 3] },
   { type: "boost", x: 3280, len: 80, lanes: [0, 1] },
   { type: "rumble", x: 3360, len: 108, lanes: [2, 3] },
+  // Washboard of tiny bumps on the near lanes; lane 0 stays clear.
+  { type: "wash", size: "triple", x: 3600, lanes: [1, 2, 3] },
+  // Low wall: wheelie or jump. Bypass on lane 3.
+  { type: "wall", size: "low", x: 3920, lanes: [1, 2] },
+  { type: "cool", x: 4020, len: 48, lanes: [3] },
+  // Downward step / curb launch on lanes 0–1; grass on the bypass.
+  { type: "step", size: "short", x: 4200, lanes: [0, 1] },
+  { type: "grass", x: 4340, len: 72, lanes: [2, 3] },
+  // Half-lane barrier: needs a real jump or a committed wheelie.
+  { type: "wall", size: "barrier", x: 4480, lanes: [2, 3] },
   // Steep face, a landing mud the jump clears, bumps to thread, a mound.
   { type: "ramp", size: "steep", x: 4600, lanes: [0, 1] },
   { type: "grass", x: 4720, len: 80, lanes: [2, 3] },
@@ -237,7 +272,11 @@ var COURSE = [
   { type: "table", size: "giant", x: 7900, lanes: [1, 2, 3] },
   { type: "rumble", x: 8800, len: 132, lanes: [0, 1] },
   { type: "mud", x: 9100, len: 72, lanes: [2, 3] },
-  { type: "boost", x: 9400, len: 56, lanes: [0] }
+  { type: "boost", x: 9400, len: 56, lanes: [0] },
+  // Late-lap curb and a low wall with an open bypass.
+  { type: "step", size: "long", x: 9800, lanes: [1, 2, 3] },
+  { type: "wall", size: "low", x: 10240, lanes: [1, 2] },
+  { type: "wash", size: "triple", x: 10440, lanes: [2, 3] }
 ]
 
 function specFor(f) {
@@ -246,12 +285,31 @@ function specFor(f) {
   if (f.type === "double") return DOUBLE_SPEC
   if (f.type === "hump") return HUMP_SPEC[f.size] || HUMP_SPEC.wide
   if (f.type === "bump") return BUMP_SPEC[f.size] || BUMP_SPEC.small
+  if (f.type === "step") return STEP_SPEC[f.size] || STEP_SPEC.short
+  if (f.type === "wash") return WASH_SPEC[f.size] || WASH_SPEC.triple
   return null
+}
+
+function wallSpecFor(f) {
+  if (f.type !== "wall") return null
+  return WALL_SPEC[f.size] || WALL_SPEC.low
 }
 
 function bakeCourse() {
   for (var i = 0; i < COURSE.length; i++) {
     var f = COURSE[i]
+    var wall = wallSpecFor(f)
+    if (wall) {
+      f.spans = []
+      f.peak = wall.h
+      f.peakAt = 0
+      f.kick = 0
+      f.len = wall.w
+      f.h = wall.h
+      f.clearTilt = wall.clearTilt
+      f.clearHeight = wall.clearHeight
+      continue
+    }
     var spec = specFor(f)
     if (!spec) {
       f.spans = []
@@ -470,6 +528,23 @@ function stripAt(world, lane, type) {
 }
 
 // How far to push the world down so the bike and the tall lips in view clear the HUD.
+function wallAt(world, lane) {
+  var x = localX(world)
+  for (var i = 0; i < COURSE.length; i++) {
+    var f = COURSE[i]
+    if (f.type !== "wall" || !hasLane(f, lane)) continue
+    if (x >= f.x && x < f.x + f.len) return f
+  }
+  return null
+}
+
+function clearsWall(s, wall) {
+  if (!wall) return true
+  if (s.air && (s.height || 0) >= wall.clearHeight) return true
+  if (!s.air && s.tilt <= wall.clearTilt) return true
+  return false
+}
+
 function cameraY(s) {
   var scroll = s.scrollX || 0
   var bikeX = s.x || 64
@@ -736,14 +811,25 @@ function land(s, ground, noCrash) {
   s.tilt = slope
 }
 
+function crashRider(s, noCrash, sideCrash) {
+  if (typeof sideCrash === "function") { sideCrash(s); return true }
+  if (!noCrash) { beginCrash(s); return true }
+  return false
+}
+
 function interactTrackWorld(s, x0, x1, dt, noCrash, sideCrash) {
   var lane = activeLane(s)
 
   // Before the new lane's surface can catch the wheels.
   // sideCrash lets CPUs tumble on ramp sides while keeping soft landings.
   if (sideHeightHit(s, x1)) {
-    if (typeof sideCrash === "function") { sideCrash(s); return }
-    if (!noCrash) { beginCrash(s); return }
+    if (crashRider(s, noCrash, sideCrash)) return
+  }
+
+  // Solid walls: wheelie or jump, else tumble. Checked at the new x.
+  var wall = wallAt(x1, lane)
+  if (wall && !clearsWall(s, wall)) {
+    if (crashRider(s, noCrash, sideCrash)) return
   }
 
   if (s.air) {
@@ -819,6 +905,8 @@ function cpuCruiseTarget(s, cpu) {
 function cpuHazardAt(cpu, world, lane) {
   if (cpu.mudSkill >= 0.5 && stripAt(world, lane, "mud")) return true
   if (cpu.mudSkill >= 0.75 && stripAt(world, lane, "grass")) return true
+  // Walls need a wheelie CPUs do not hold, so steer around them.
+  if (wallAt(world, lane)) return true
   return false
 }
 
@@ -903,6 +991,7 @@ function cpuWantTurbo(s, cpu) {
   var coolAhead = false
   for (var d = 0; d <= 150; d += 30) {
     if (surfaceAt(cpu.worldX + d, lane)) return false
+    if (wallAt(cpu.worldX + d, lane)) return false
     if (stripAt(cpu.worldX + d, lane, "cool")) coolAhead = true
   }
   var gap = cpu.worldX - (s.scrollX + s.x)
@@ -1272,9 +1361,10 @@ if (typeof module !== "undefined") {
     initialState: initialState, freshRace: freshRace, setInput: setInput, step: step, pose: pose, cpuPose: cpuPose, heatBand: heatBand,
     riderPose: riderPose, racePosition: racePosition,
     courseFeature: courseFeature, rampHeight: rampHeight, rampSlope: rampSlope,
-    surfaceAt: surfaceAt, cameraY: cameraY, formatRaceTime: formatRaceTime,
+    surfaceAt: surfaceAt, wallAt: wallAt, clearsWall: clearsWall, cameraY: cameraY, formatRaceTime: formatRaceTime,
     frontTireDrop: frontTireDrop, downhillBonus: downhillBonus, rumbleSample: rumbleSample,
     sideHeightHit: sideHeightHit, cpuWantTurbo: cpuWantTurbo,
+    WALL_SPEC: WALL_SPEC, STEP_SPEC: STEP_SPEC, WASH_SPEC: WASH_SPEC,
     parsePreferences: parsePreferences, serializePreferences: serializePreferences
   }
 }

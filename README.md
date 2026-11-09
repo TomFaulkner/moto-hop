@@ -25,7 +25,7 @@ including a down-slope whose pitch matches the bike. Big ramps are two to
 three-and-a-half bike-heights (the sprite is 43px). The camera lifts for tall
 lips. Mud and grass slow the bike. Changing lanes into a raised piece from
 the side, or off the side of one, tumbles. Partial raised pieces draw a side
-face. The course is a loop of these pieces. A checkered line marks the start of each lap, and the HUD shows the lap, the time on this lap, and the last lap time. See `docs/track-pieces.md`.
+face. The course is a loop of these pieces, plus downward steps, a washboard of tiny mounds, and low walls / half-lane barriers that clear only with a wheelie or a jump. A checkered line marks the start of each lap, and the HUD shows the lap, the time on this lap, and the last lap time. See `docs/track-pieces.md`.
 Shapes follow the nesmaps.com Excitebike sheet; the pixels are ours.
 
 CPU riders share the player's side-crash rule on ramp edges, recover after
@@ -87,6 +87,6 @@ QT_QPA_PLATFORM=offscreen python tools/shoot.py screens   # needs PySide6 6.x
 writes `idle`, `riding`, `wheelie`, `lane`, `crash`, `crashed`, `turbo`, `overheat`,
 `ramp-up`, `airborne`, `cool-arrow`, `boost`, `land-crash`, `wide-partial`,
 `hazards`, `rumble`, `nose`, `downhill`, `ramp-climb`, `pieces-closeup`,
-`finish`, `results`, `ramp-top`, `cpu-pack`, `cpu-pass`, `cpu-ramp`, `cpu-clip`, `cpu-mud`, `cpu-side-crash`, `cpu-turbo` PNGs.
+`finish`, `results`, `ramp-top`, `cpu-pack`, `cpu-pass`, `cpu-ramp`, `cpu-clip`, `cpu-mud`, `cpu-side-crash`, `cpu-turbo`, `wall-hit`, `wall-wheelie`, `barrier`, `step`, `wash` PNGs.
 
 See `CREDITS.md` for asset sources and licenses.
